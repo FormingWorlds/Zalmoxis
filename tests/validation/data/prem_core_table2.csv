@@ -1,0 +1,7 @@
+# PREM model values, Dziewonski & Anderson (1981), Phys. Earth Planet. Inter. 25, 297-356, doi:10.1016/0031-9201(81)90046-7
+# Table II, journal p. 312 (levels 1, 14, 15, 38): read from the page image at 400 dpi
+level,region,radius_km,density_g_cm3,pressure_kbar,gravity_cm_s2
+1,inner_core,0.0,13.08848,3638.524,0.0
+14,inner_core,1221.5,12.76360,3288.513,440.02
+15,outer_core,1221.5,12.16634,3288.502,440.03
+38,outer_core,3480.0,9.90349,1357.510,1068.23

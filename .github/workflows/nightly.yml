@@ -18,21 +18,25 @@ permissions:
   contents: read
 
 # Nightly: unit + smoke + integration with coverage, as parallel jobs. Not on push or PR
-# CI: each smoke or integration test runs a full solve (5-10 min on a 2-vCPU runner under
+# CI: each smoke or integration test runs a full solve (5-10 min on a 4-vCPU runner under
 # coverage), which adds no bug-finding signal to the unit suite.
+env:
+  # the test id that the matrix entries with split: deselect leave out and split: only run alone
+  CORE_SPLIT: tests/test_core_two_phase_solve.py::test_the_adiabat_crosses_the_icb_at_its_pressure
+
 jobs:
   nightly:
     name: Zalmoxis-nightly ${{ matrix.suite }} (ubuntu-latest)
     runs-on: ubuntu-latest
-    # The full solves on the Wolf & Bower tables, the full adiabatic PALEOS solves at 5 M_earth,
-    # the real accept solves (one job per file), the longest of them (5 whole-tree jobs) and
-    # the solve of the stored grid start-up reference run in their own jobs, beside the rest.
+    # The Wolf & Bower solves, the adiabatic PALEOS solves at 5 M_earth, the real accept solves
+    # (one job per file, 5 whole-tree jobs for the longest), the grid start-up reference, the
+    # two-layer core solves and the default bit-identity solve (alone) run in their own jobs.
     strategy:
       fail-fast: false
       matrix:
         include:
           - suite: main
-            select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not accept_solves_reference
+            select: (unit or smoke or integration) and not slow and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not accept_solves_reference and not core_two_phase and not default_invariance
             args: --dist load --cov-fail-under=90
             job_timeout: 170
           - suite: wolfbower
@@ -74,12 +78,29 @@ jobs:
           - suite: accept_solves_accepted_on
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_accepted_on.py
+          - suite: core_two_phase
+            select: core_two_phase and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not accept_solves_reference
+            # 2 workers: on 4 the solves share the vCPUs and run 1.5 to 2.6 times longer
+            args: --dist load --cov-fail-under=0 --durations=0 -n 2
+            job_timeout: 170
+            threads: 1
+            split: deselect
+          - suite: core_two_phase_icb_cross
+            select: core_two_phase and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not accept_solves_reference
+            # 2 workers: the 5 ICB-cross solves in 3 waves, about 3 x 1000 s on the CI runner
+            args: --dist load --cov-fail-under=0 --durations=0 -n 2
+            job_timeout: 120
+            threads: 1
+            split: only
           - suite: accept_solves_pressure_root
             select: accept_solves and not accept_solves_long and not accept_solves_newton_setups and not wolfbower and not paleos_adiabat
             args: --dist load --cov-fail-under=0 --durations=0 tests/test_pressure_root_solves.py
+          - suite: default_invariance
+            select: default_invariance and not wolfbower and not paleos_adiabat and not accept_solves and not accept_solves_long and not accept_solves_newton_setups and not core_two_phase and not accept_solves_reference
+            args: --cov-fail-under=0 --durations=0
     # 90 min per job, 170 min for main, wolfbower and each Newton setup job, 150 min for
-    # accept_solves_long and accept_solves_reference; the Newton setup sweep is split over 4
-    # jobs by test id (-k).
+    # accept_solves_long and accept_solves_reference, 170 and 120 min for the 2 core jobs; the Newton
+    # setup sweep is split over 4 jobs by test id (-k).
     timeout-minutes: ${{ matrix.job_timeout || 90 }}
     steps:
       - name: Checkout repository
@@ -104,6 +125,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install .
           pip install pytest pytest-cov pytest-xdist pytest-timeout hypothesis "proteus-mpl>=1.5.0"
+
+      # The real PALEOS at the commit Zalmoxis tests against, for the iron side tables and their
+      # solves; without it those tests skip on the in-process mock.
+      - name: Install PALEOS at the tested commit
+        run: |
+          sha=$(python -c "import re, pathlib; print(re.search(r\"PALEOS_TESTED_SHA = '([0-9a-f]{40})'\", pathlib.Path('src/zalmoxis/eos/paleos_api.py').read_text()).group(1))")
+          git clone -q https://github.com/maraattia/PALEOS.git "$RUNNER_TEMP/PALEOS"
+          git -C "$RUNNER_TEMP/PALEOS" checkout -q "$sha"
+          pip install -e "$RUNNER_TEMP/PALEOS"
+          python -c "import paleos, zalmoxis.eos.paleos_api as a; print(paleos.__file__, a.paleos_installed_sha())"
 
       # The pins live in the installed fwl-io and in src/zalmoxis/datasets.
       - name: Resolve the data cache key
@@ -132,16 +163,42 @@ jobs:
       - name: Show the runner CPU
         run: nproc; lscpu | grep -E '^(Model name|CPU\(s\))' || true
 
+      - name: Check that the 2 core jobs run each core test once
+        if: matrix.split == 'only'
+        run: |
+          set -o pipefail
+          ids() { pytest -m "${{ matrix.select }}" --collect-only -q -p no:xdist -o "addopts=" "$@" | grep '::' | sort; }
+          all="$(ids)"; rest="$(ids --deselect=$CORE_SPLIT)"; part="$(ids $CORE_SPLIT)"
+          test -n "$part" && test "$(comm -23 <(echo "$all") <(echo "$rest"))" = "$part" || { printf 'other job drops:\n%s\nthis job runs:\n%s\n' "$(comm -23 <(echo "$all") <(echo "$rest"))" "$part"; exit 1; }
+
       - name: Run unit + smoke + integration tests with coverage
         env:
           ZALMOXIS_NEED_WOLFBOWER: ${{ matrix.suite == 'wolfbower' && '1' || '' }}
         run: |
+          # one thread per xdist worker in the core jobs; the workers share the 4 vCPUs
+          if [ -n "${{ matrix.threads }}" ]; then
+            export OMP_NUM_THREADS=${{ matrix.threads }} OPENBLAS_NUM_THREADS=${{ matrix.threads }} MKL_NUM_THREADS=${{ matrix.threads }}
+            pip install -q threadpoolctl && python -m threadpoolctl -i numpy scipy || echo 'thread pools not printed'
+          fi
+          split=''
+          [ "${{ matrix.split }}" = deselect ] && split="--deselect=$CORE_SPLIT"
+          [ "${{ matrix.split }}" = only ] && split="$CORE_SPLIT"
           # --timeout names a hung test in the worker-crash report before the job limit
           # cancels the run; a timeout marker on a test takes precedence over it.
           pytest -m "${{ matrix.select }}" -n auto -o "addopts=" -rs \
             --timeout=${{ matrix.test_timeout || 3000 }} --timeout-method=thread --durations=25 \
             --cov=zalmoxis --cov-report=term-missing --cov-report=xml \
-            ${{ matrix.args }}
+            ${{ matrix.args }} $split
+
+      - name: Print the kernel out-of-memory lines
+        if: ${{ always() && startsWith(matrix.suite, 'core_two_phase') }}
+        continue-on-error: true
+        run: |
+          # read the log first: a failed dmesg must not read as a run without an OOM kill
+          log="$(sudo dmesg -T)"
+          test -n "$log" || { echo 'kernel log empty: OOM state unknown'; exit 1; }
+          echo "kernel log: $(wc -l <<< "$log") lines"
+          grep -iE 'out of memory|oom-kill|killed process' <<< "$log" || echo 'no OOM line'
 
       - name: Upload coverage to Codecov
         if: ${{ !cancelled() }}

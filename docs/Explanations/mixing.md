@@ -1,6 +1,13 @@
 # Multi-Material Mixing
 
-This page documents how Zalmoxis handles layers containing multiple materials, including the phase-aware density suppression that prevents non-condensed volatiles from dominating the mixture.
+This page explains how Zalmoxis computes the density of a layer that holds more than one material. That density sets the pressure profile and the radius of the planet. Most sections cover the mantle:
+
+- the volume-additive mixing rule;
+- the suppression of volatiles that are not condensed, so that they do not dominate the mixture;
+- the miscibility of H$_2$ with silicate and with water;
+- how a volatile divides between solid and melt.
+
+Two sections cover the core: a [light-element core](#light-element-core) with H, C, N, O, Si and S in iron, and a [two-layer core](#two-layer-core) with a solid inner core and a liquid outer core.
 For configuration syntax, see the [configuration guide](../How-to/configuration.md#multi-material-mixing).
 For the governing equations and layer architecture, see the [model overview](model.md).
 
@@ -131,7 +138,7 @@ This approximation is self-consistent within the model (the density and temperat
 ### Adiabatic gradient mixing
 
 The mixed $\nabla_{\mathrm{ad}}$ is computed as a suppression-weighted linear combination of the component adiabatic gradients.
-This is a simplification: even for ideal mixing, the true adiabatic coefficient of a multi-component system should be derived from the total entropy $S = \sum_i \chi_i S_i + S_{\mathrm{mix}}$ and its partial derivatives with respect to $P$ and $T$ ([Kempton et al. 2023, ApJ 953, 57, Appendix B](https://doi.org/10.3847/1538-4357/ace10d)).
+This is a simplification: even for ideal mixing, the true adiabatic coefficient of a multi-component system should be derived from the total entropy $S = \sum_i \chi_i S_i + S_{\mathrm{mix}}$ and its partial derivatives with respect to $P$ and $T$, as in Appendix B of Kempton et al. (2023)[^cite-kempton2023].
 The nonlinearity arises from the mixing entropy term and composition-dependent partial derivatives, and can produce deviations of hundreds of kelvin in deep temperature profiles for atmospheric gas mixtures.
 In the context of Zalmoxis, this primarily affects layers that mix condensed materials (e.g., silicate + dissolved H$_2$) via additive volumes, which is a different thermodynamic regime from the atmospheric gas mixtures (additive partial pressures) treated by Kempton et al.
 The linear approximation is standard in interior structure solvers for condensed-phase mixtures, but users should be aware that it does not capture composition-dependent corrections to the temperature gradient.
@@ -164,9 +171,9 @@ The transition is smooth, controlled by the `binodal_T_scale` parameter (default
 Two independent binodal models are available. Both are evaluated automatically when `Chabrier:H` is present in a mixture. The most restrictive (lowest) suppression weight wins.
 For the full physics, see the [binodal documentation](binodal.md).
 
-### H$_2$-MgSiO$_3$ miscibility: Rogers+2025
+### H$_2$-MgSiO$_3$ miscibility
 
-The H$_2$-MgSiO$_3$ binodal from [Rogers, Young & Schlichting (2025, MNRAS 544, 3496)](https://doi.org/10.1093/mnras/staf1940) defines the phase boundary between a miscible supercritical fluid (above) and immiscible gas + melt (below).
+The H$_2$-MgSiO$_3$ binodal from Rogers, Young & Schlichting (2025)[^cite-rogers2025] defines the phase boundary between a miscible supercritical fluid (above) and immiscible gas + melt (below).
 The binodal temperature varies with H$_2$ mole fraction and pressure:
 
 - At 1 GPa, the peak binodal temperature is ~4100 K (at the critical mole fraction $x_\mathrm{c} = 0.74$).
@@ -175,9 +182,9 @@ The binodal temperature varies with H$_2$ mole fraction and pressure:
 
 This model applies when `Chabrier:H` coexists with any MgSiO$_3$ EOS in the same layer.
 
-### H$_2$-H$_2$O miscibility: Gupta+2025
+### H$_2$-H$_2$O miscibility
 
-The H$_2$-H$_2$O critical curve from [Gupta, Stixrude & Schlichting (2025, ApJL 982, L35)](https://doi.org/10.3847/2041-8213/adb631) uses an asymmetric Margules Gibbs free energy model.
+The H$_2$-H$_2$O critical curve from Gupta, Stixrude & Schlichting (2025)[^cite-gupta2025] uses an asymmetric Margules Gibbs free energy model.
 The critical temperature depends on pressure (via the interaction parameter $W(T, P)$).
 
 A floor of 647 K is imposed on the critical temperature.
@@ -227,13 +234,13 @@ The implementation enforces a floor $\bar{\phi}_{\mathrm{floor}} = 1.01 \sum_i X
 The floor follows from the inventory and is not user-tunable.
 
 !!! note "The two prescriptions give almost identical radius signals at the present EOS fidelity"
-    With the current volume-additive density closure, the `uniform` and `strong` prescriptions yield planet radii that agree to well within any practical measurement precision ($\lesssim 10^{-6}\ R_\oplus$ across the sub-Neptune validation grid). Redistributing a fixed volatile mass between solid and molten shells leaves the mass–radius relation essentially unchanged, because PALEOS water is either vapor (suppressed by the density sigmoid) or already compressed to within ~30% of silicate, so concentrating it in the melt rearranges little that the radius integral resolves. The choice of partition rule is therefore consequential for the chemistry coupling (surface speciation, melt-driven outgassing) rather than for the structure. A structurally distinguishable signal would require an EOS that keeps dissolved water volumetrically distinct from silicate, such as an explicit low-density hydrous-melt phase or a partial-molar-volume model. That is the physics the reserved `D_const` and `solubility` hooks are intended to carry.
+    With the current volume-additive density closure, the `uniform` and `strong` prescriptions yield planet radii that agree to well within any practical measurement precision ($\lesssim 10^{-6}\ R_\oplus$ across the sub-Neptune validation grid). Redistributing a fixed volatile mass between solid and molten shells leaves the mass-radius relation essentially unchanged, because PALEOS water is either vapor (suppressed by the density sigmoid) or already compressed to within ~30% of silicate, so concentrating it in the melt rearranges little that the radius integral resolves. The choice of partition rule is therefore consequential for the chemistry coupling (surface speciation, melt-driven outgassing) rather than for the structure. A structurally distinguishable signal would require an EOS that keeps dissolved water volumetrically distinct from silicate, such as an explicit low-density hydrous-melt phase or a partial-molar-volume model. That is the physics the reserved `D_const` and `solubility` hooks are intended to carry.
 
 ---
 
 ## Light-element core
 
-A core layer can carry H, C, N, O, Si and S as `CoreAlloy:<element>` components next to one iron base, which must be `PALEOS:iron`:
+A core layer can carry H, C, N, O, Si and S as `CoreAlloy:<element>` components next to one iron base, `PALEOS:iron` or one of the 2 iron side tables of the [two-layer core](#two-layer-core):
 
 ```toml
 core = "PALEOS:iron:0.96+CoreAlloy:H:0.005+CoreAlloy:O:0.02+CoreAlloy:Si:0.015"
@@ -245,9 +252,9 @@ Such a core does not use the harmonic mean and the vapour sigmoid above. `zalmox
 
 $$\rho_\mathrm{lin} = \rho_\mathrm{Fe}\,\Bigl(1 - \sum_i \beta_i\, w_i\Bigr),$$
 
-[Hirose et al. (2021)](https://doi.org/10.1038/s43017-021-00203-6), p. 3, give 4 outer cores with a single light element that each fit the seismic outer core: 13.3-14.4 wt% S, 9.3-9.8 wt% Si, 8.4-8.9 wt% O or 0.96-0.99 wt% H, at 4137 K at the core-mantle boundary and 5400 K at the inner-core boundary; each is 6 to 8 % less dense than pure liquid iron. Their source, [Umemoto & Hirose (2020)](https://doi.org/10.1016/j.epsl.2019.116009), gives each range for one inner-core boundary temperature, 5400 K: it is the spread of single-element compositions that fit the PREM density and P-wave velocity within the errors of their calculation and the 2$\sigma$ seismic uncertainties, not a change between the 2 boundaries; with 4800 K the H range is 1.05-1.12 wt%. $\beta$ gives 7 % at the midpoint of each range: $\beta$ = 7/13.85 = 0.505 (S), 7/9.55 = 0.733 (Si), 7/8.65 = 0.809 (O) and 7/0.975 = 7.18 (H), so the ends of each range lie at 6.7 to 7.3 %. This is a calibration against liquid iron at Earth core pressures; at other pressures the law keeps the same $\beta$, and how $\beta$ changes with pressure is not known here (for comparison, the Luo H law below lowers the density of the Luo liquid iron at 8000 K by 13.2 % at 136 GPa and 11.0 % at 330 GPa for 0.975 wt% H). The law scales the density of the iron base it is given. Where the PALEOS iron table is solid, below the melting curve of pure iron, the base is solid iron: 2.3 % denser at 136 GPa and 4137 K and 1.2 % at 330 GPa and 5400 K than the liquid iron of Luo et al. (2024, Eq. 14), extrapolated there below its 8000 K fit range, so these offsets are differences between 2 fits. There a calibrated core is 4.9 and 5.8 % less dense than that liquid iron, not 7 %. C keeps the liquid value 1.3 of [Li et al. (2019)](https://doi.org/10.1017/9781108677950.003), Table 3.3, and N, with no value there, does not change the density; neither is calibrated against the outer core.
+Hirose et al. (2021)[^cite-hirose2021], p. 3, give 4 outer cores with a single light element that each fit the seismic outer core: 13.3-14.4 wt% S, 9.3-9.8 wt% Si, 8.4-8.9 wt% O or 0.96-0.99 wt% H, at 4137 K at the core-mantle boundary and 5400 K at the inner-core boundary; each is 6 to 8 % less dense than pure liquid iron. Their source, Umemoto & Hirose (2020)[^cite-umemoto2020], gives each range for one inner-core boundary temperature, 5400 K: it is the spread of single-element compositions that fit the PREM density and P-wave velocity within the errors of their calculation and the 2$\sigma$ seismic uncertainties, not a change between the 2 boundaries; with 4800 K the H range is 1.05-1.12 wt%. $\beta$ gives 7 % at the midpoint of each range: $\beta$ = 7/13.85 = 0.505 (S), 7/9.55 = 0.733 (Si), 7/8.65 = 0.809 (O) and 7/0.975 = 7.18 (H), so the ends of each range lie at 6.7 to 7.3 %. This is a calibration against liquid iron at Earth core pressures; at other pressures the law keeps the same $\beta$, and how $\beta$ changes with pressure is not known here (for comparison, the Luo H law below lowers the density of the Luo liquid iron at 8000 K by 13.2 % at 136 GPa and 11.0 % at 330 GPa for 0.975 wt% H). The law scales the density of the iron base it is given. Where the PALEOS iron table is solid, below the melting curve of pure iron, the base is solid iron: 2.3 % denser at 136 GPa and 4137 K and 1.2 % at 330 GPa and 5400 K than the liquid iron of Eq. 14 of Luo et al. (2024)[^cite-luo2024], extrapolated there below its 8000 K fit range, so these offsets are differences between 2 fits. There a calibrated core is 4.9 and 5.8 % less dense than that liquid iron, not 7 %. C keeps the liquid value 1.3 of Li et al. (2019)[^cite-li2019], Table 3.3, and N, with no value there, does not change the density; neither is calibrated against the outer core.
 
-**Fe-H-O member.** `CoreAlloy:H-Luo` uses the liquid Fe (64 Fe) and Fe-water (64 Fe + 8 H$_2$O) equations of state of [Luo et al. (2024)](https://doi.org/10.1038/s41550-024-02347-z), Methods Eq. 14. Their volume difference at the same $(P, T)$, per kg of water, is the excess specific volume $\Delta v_c$ of a water carrier in liquid iron. The core H enters as this carrier, mass fraction $w_c = w_\mathrm{H} M_{\mathrm{H_2O}} / (2 M_\mathrm{H}) = 8.94\, w_\mathrm{H}$. The carrier O, $w_c - w_\mathrm{H} = 7.94\, w_\mathrm{H}$, counts against the core O; the rest of the O, $w_\mathrm{O} - 7.94\, w_\mathrm{H}$, enters the linear law with $\beta_\mathrm{O}$, also when it is negative because the core holds less O than the carrier. The linear law then applies to the alloy without the carrier, with fractions $w_i / (1 - w_c)$, and
+**Fe-H-O member.** `CoreAlloy:H-Luo` uses the liquid Fe (64 Fe) and Fe-water (64 Fe + 8 H$_2$O) equations of state of Luo et al. (2024)[^cite-luo2024], Methods Eq. 14. Their volume difference at the same $(P, T)$, per kg of water, is the excess specific volume $\Delta v_c$ of a water carrier in liquid iron. The core H enters as this carrier, mass fraction $w_c = w_\mathrm{H} M_{\mathrm{H_2O}} / (2 M_\mathrm{H}) = 8.94\, w_\mathrm{H}$. The carrier O, $w_c - w_\mathrm{H} = 7.94\, w_\mathrm{H}$, counts against the core O; the rest of the O, $w_\mathrm{O} - 7.94\, w_\mathrm{H}$, enters the linear law with $\beta_\mathrm{O}$, also when it is negative because the core holds less O than the carrier. The linear law then applies to the alloy without the carrier, with fractions $w_i / (1 - w_c)$, and
 
 $$\frac{1}{\rho} = \frac{1 - w_c}{\rho_\mathrm{lin}} + w_c\, \Delta v_c(P, T).$$
 
@@ -263,7 +270,7 @@ The density is continuous in $w_\mathrm{H}$ and $w_\mathrm{O}$, also where the O
 
 **Composition range.** The Luo wet cell has a carrier mass fraction of 0.0388 (0.43 wt% H); above it $\Delta v_c$ is used beyond the composition of the fit, and the first such core in a process gives a warning. The $\beta$ values and both Luo members describe liquid iron; at nodes where the PALEOS iron table is solid (for example 136 GPa and 4000 K) the same laws apply.
 
-The split of $\Delta v_c$ into an H part and a linear-law O part is first order in the O rest of the remaining alloy, $(w_\mathrm{O} - 7.94\, w_\mathrm{H}) / (1 - w_c)$. A core whose O rest is below -0.2 raises `CoreAlloyError`; with no core O that is $w_\mathrm{H}$ above 0.02057. The Luo cell (-0.036) and 1 wt% H (-0.087) lie inside the bound. Core density over the PALEOS iron density for the carrier, at the outermost core node (index 77 of 150 nodes, counted from 0) of the default 1 $M_\oplus$ pure-iron structure on the numpy path (about 136.6 GPa and 5130 K; this state varies by about 1e-4 between environments, within the round-off spread of the numpy structure solve) and at 135 GPa and 4000 K (all fractions are mass fractions; 0.0252 is the core O of the 50 GPa case of Tsutsumi et al. 2025):
+The split of $\Delta v_c$ into an H part and a linear-law O part is first order in the O rest of the remaining alloy, $(w_\mathrm{O} - 7.94\, w_\mathrm{H}) / (1 - w_c)$. A core whose O rest is below -0.2 raises `CoreAlloyError`; with no core O that is $w_\mathrm{H}$ above 0.02057. The Luo cell (-0.036) and 1 wt% H (-0.087) lie inside the bound. Core density over the PALEOS iron density for the carrier, at the outermost core node (index 77 of 150 nodes, counted from 0) of the default 1 $M_\oplus$ pure-iron structure on the numpy path (about 136.6 GPa and 5130 K; this state varies by about 1e-4 between environments, within the round-off spread of the numpy structure solve) and at 135 GPa and 4000 K (all fractions are mass fractions; 0.0252 is the core O of the 50 GPa case of Tsutsumi et al. (2025)[^cite-tsutsumi2025]):
 
 | $w_\mathrm{H}$ | $w_\mathrm{O}$ | $w_c$ | O rest / $(1 - w_c)$ | $\rho/\rho_\mathrm{Fe}$, outermost core node | $\rho/\rho_\mathrm{Fe}$, 135 GPa, 4000 K |
 |---|---|---|---|---|---|
@@ -286,7 +293,127 @@ The split of $\Delta v_c$ into an H part and a linear-law O part is first order 
 
 Over 20-3000 GPa and 3000-14000 K, $r^*$ is at most 0.595, at 1300 GPa and 8000 K, the corner of the Luo fit box; on a grid of 160 log-spaced pressures by 120 temperatures, a fifth of the states have no root. Below 20 GPa (2000-16000 K) $r^*$ is at most 0.626, at 0.1 MPa and 8000 K, where the carrier volume is that of the box edge at 50 GPa. Above 14000 K the carrier volume is that of 14000 K and $r^*$ grows with temperature: over 20-3000 GPa it is at most 0.537 at 16000 K, 0.611 at 35000 K, 0.654 at 40000 K and 0.796 at 59000 K, and above 0.8 from 60000 K. The bound 0.8 therefore holds at every pressure for temperatures up to 16000 K, and above 20 GPa up to 59000 K. Alone in the remaining alloy, each element reaches the bound at 24.7 wt% O, 15.4 wt% C, 39.6 wt% S, 27.3 wt% Si and 2.79 wt% H. These limits lie above the end compounds of the binaries of the alloy liquidus. A core whose S, O and C together need more Fe than it holds in the units of the alloy liquidus (Fe$_3$S, FeO, and Fe$_3$C below 255 GPa or Fe$_7$C$_3$ at and above it, with all O counted as FeO) gives one warning per process, and its density is used. For one element alone this bound is 16.06 wt% S, 22.27 wt% O, or 6.69 and 8.44 wt% C. It is a bound on the Fe of the core: Si, H and N take no Fe but reduce the Fe mass, while the liquidus counts Si atoms with its solvent.
 
-The fractions of a light-element core are given explicitly for every component, including the iron base, and sum to 1. A composition with no iron left, a carrier fraction of 1 or more ($w_\mathrm{H} \geq 1/8.94 = 0.1119$), a linear-law factor $1 - \mathrm{lin}$ below 0.8 (below), a negative or non-finite fraction, a base other than `PALEOS:iron`, two iron bases or both H laws raises `CoreAlloyError`, as does a density at or below zero. The [equation-of-state validation page](../Validation/equation_of_state.md) holds the test cases.
+The fractions of a light-element core are given explicitly for every component, including the iron base, and sum to 1. A composition with no iron left, a carrier fraction of 1 or more ($w_\mathrm{H} \geq 1/8.94 = 0.1119$), a linear-law factor $1 - \mathrm{lin}$ below 0.8 (below), a negative or non-finite fraction, a base other than `PALEOS:iron` or an iron side table, two iron bases or both H laws raises `CoreAlloyError`, as does a density at or below zero. The [equation-of-state validation page](../Validation/equation_of_state.md) holds the test cases.
+
+## Two-layer core
+
+Which part of the core is solid, and which density does each part take? With the `[EOS]` key `inner_core` set, the core has 2 layers: a solid inner core and a liquid outer core. The inner-core boundary (ICB) lies between them; the core-mantle boundary (CMB) is the top of the outer core.
+
+### The 2 sides of the iron table
+
+Where PALEOS gives iron as one table of the stable phase, a two-layer core reads 2 side tables of one phase each, over the same range. The inner core reads the solid side, `PALEOS-API-2phase:iron-solid`: the solid phase of the PALEOS phase diagram with its melting test left out. Above the melting curve it is a metastable solid, where the stable phase is the liquid. The outer core reads the liquid side, `PALEOS-API-2phase:iron-liquid`: the PALEOS liquid of Luo et al. (2024)[^cite-luo2024], below the melting curve its metastable extension. Each layer can carry `CoreAlloy` light elements on its side, as in the [light-element core](#light-element-core); an inner core without them is pure iron.
+
+### The inner-core boundary
+
+A two-layer core takes exactly one of 2 ICB rules:
+
+- **Liquidus rule** (`core_liquidus`): the liquid of the outer core is at its liquidus $T_\mathrm{liq}$ at the ICB. $T_\mathrm{liq}$ is a named iron melting curve or a callable `T_liq(P)` \[K\], such as an alloy liquidus. Core thermal models use this condition to set the ICB of a growing inner core: Labrosse (2015)[^cite-labrosse2015], Sect. 2, takes the ICB temperature as the liquidus temperature of the outer-core material, and Nimmo (2015)[^cite-nimmo2015], Fig. 2, defines the inner core by the intersection of the adiabat and the melting curve.
+- **Mass rule** (`inner_core_mass_fraction` $f$): the inner core is the mass $f M_\mathrm{core}$.
+
+How the rule finds the ICB depends on the temperature profile:
+
+- **On an adiabat** (`temperature_mode = "adiabatic"`): the rule continues the outer-core adiabat below the ICB to the centre with the liquid side, the liquid branch $T_\mathrm{l}(P)$. The ICB pressure $P_\mathrm{ICB}$ is the first root, from the centre outward, of $T_\mathrm{l}(P) - T_\mathrm{liq}(P) = 0$. The solid side does not enter the rule.
+- **On a given profile** (`isothermal`, `linear`, `prescribed`, a temperature function, or a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller)): the profile does not depend on the phase, so the rule takes its first root of $T(P) - T_\mathrm{liq}(P) = 0$ from the centre outward.
+
+### How a solve converges on one ICB
+
+How does a solve find an ICB that its temperature profile and its layers agree on?
+
+The structure equations put a shell in the inner core by its enclosed mass, as they do at the core-mantle boundary.
+So a pass must know its ICB before it integrates, and the liquidus rule takes the ICB from the temperature profile of the pass before ([How the density solve reads the core temperature](adiabat_integration.md#how-the-density-solve-reads-the-core-temperature)). Core shells below the mass at $P_\mathrm{ICB}$ take `inner_core`, the others `core`. A liquidus solve converges only when its temperature profile and its layers share one ICB:
+
+- on an adiabat, the superheat $S = T_\mathrm{l}(P_\mathrm{ICB}) - T_\mathrm{liq}(P_\mathrm{ICB})$ at the ICB of the layers is at most 0.5 K in size;
+- on a given profile, the ICB of the layers lies within `tolerance_outer` of the core mass from the root;
+- the ICB that the adiabat of the pass took lies within `tolerance_outer` of the core mass from the ICB of the layers.
+
+The result reports $S$ as `icb_superheat` \[K\] ([the ICB on an adiabat](../Validation/hydrostatic_structure.md#the-icb-on-an-adiabat)).
+
+
+### The pressure at the inner-core boundary
+
+The rule, the superheat and the adiabat cut take one pressure for one ICB mass: $P$ linear in $m^{2/3}$ between the 2 core nodes on either side of it (a node segment is the stretch between 2 neighbouring grid nodes), with $m$ the enclosed mass, which is exact for a sphere of uniform density (not for a uniform shell above a denser centre). When the ICB lies in the node segment of the core-mantle boundary, the upper node is the CMB point: the point at the core mass with $\ln P$ linear in $m$ between the 2 nodes of that segment. The ICB pressure is then as accurate as that point, and its error grows with the radius of the core-mantle boundary and falls with the node count.
+The core arrays take the same pressure, with 2 exceptions: they never put `P_icb` below the pressure of their node at the core mass, which comes from the structure integration, and they give a full inner core that pressure. The ICB readers then differ from `P_icb` by that move, and a move above $10^{-3}$ of `P_icb` logs a warning. For the pure-iron core solid to the core-mantle boundary at 2460 K on 150 nodes, the CMB point lies a relative $3.0 \times 10^{-6}$ below that node.
+
+**Where this is checked.** [The rule between grid nodes](../Validation/hydrostatic_structure.md#given-profiles-refused-accepts-and-bounds-of-the-rule) and the unit tests `tests/test_core_two_phase.py::test_p_icb_in_the_cmb_segment_lies_at_or_above_the_cmb_node`, `::test_a_p_icb_moved_by_more_than_1e_3_logs_a_warning` and `::test_a_full_inner_core_takes_the_cmb_node_pressure_above_the_reader`.
+
+#### How accurate the CMB point is
+
+On a uniform sphere, over about 300 positions of the core-mantle boundary per band, the largest relative error of the CMB point is:
+
+| $r_\mathrm{CMB}/R$ | 11 nodes | 41 nodes | 150 nodes |
+|---|---|---|---|
+| 0.3 to 0.6 | $2.0 \times 10^{-3}$ | $1.4 \times 10^{-4}$ | $9.8 \times 10^{-6}$ |
+| 0.6 to 0.8 | $9.4 \times 10^{-3}$ | $9.3 \times 10^{-4}$ | $7.5 \times 10^{-5}$ |
+| 0.8 to 0.95 | $4.1 \times 10^{-2}$ | $1.8 \times 10^{-2}$ | $2.0 \times 10^{-3}$ |
+
+The pressure of the uniform sphere falls to 0 at its surface, so the last row overstates a planet with a mantle above the core.
+On 11 nodes, a CMB above $r/R = 0.9$ lies in the top node segment, whose upper node has $P = 0$.
+There is no CMB point in that segment, so the 11-node value of the last row comes from the other 200 of its 300 positions.
+A surface pressure of $10^{-6}$ of the centre pressure in place of 0 gives an error of 0.99 in that segment.
+
+### The temperature at the CMB point
+
+Which temperature do the ICB readers use at the core-mantle boundary (CMB)?
+In short: the temperature of the core side of the profile, not a mix of core and mantle.
+
+The ICB readers find or test the ICB on a profile: `icb_from_profile`, `icb_superheat` and `icb_misses`.
+They need a temperature at the CMB point, the point at the core mass inside the node segment of the CMB; [the pressure at the inner-core boundary](#the-pressure-at-the-inner-core-boundary) gives its pressure.
+This temperature matters in 3 places:
+
+- the ICB of a pass whose ICB lies in that node segment, above the last core node;
+- whether that segment counts in `solid_above_icb_mass_fraction`;
+- the superheat `icb_superheat` of a full inner core, and its test.
+
+The readers take it from the core side of the temperature source of the pass, in this order:
+
+1. with a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller), the table at that pressure;
+2. on the adiabat at blend 1, the core gradient stepped outward from the last core node to the pressure of the point, the reverse of the inward step of the adiabat there;
+3. with another temperature function, that function at the CMB radius ($r^3$ linear in the enclosed mass).
+
+The interpolation rule, $T$ linear in $\ln P$ between the last core node and the first mantle node, mixes the mantle gradient into the point.
+The passes below blend 1 of a solve that computes its own adiabat (the linear first guess and the blend steps 0.25 to 0.75), which are never accepted, use it, and so does a caller of `icb_from_profile` without a `cmb_point_rule`.
+
+**Worked example.** On the 4 stored solves of `input/default.toml`, the interpolation rule puts the point 3.7 to 3.9 K above the adiabat with an extra node at the core mass; the core-side step meets it to $10^{-10}$ K (the test asserts $10^{-6}$ K).
+
+**Where this is checked.** [The temperature at the CMB point](../Validation/hydrostatic_structure.md#the-temperature-at-the-cmb-point).
+
+### Temperature
+
+As in a one-layer core, each node takes the adiabatic gradient $\nabla_\mathrm{ad} = (\partial \ln T / \partial \ln P)_s$, the gradient at constant specific entropy $s$, of the side of its layer. The temperature is continuous at the ICB, and the structure temperature has no latent heat. In the 2 side tables at core states, $\nabla_\mathrm{ad}$ of the solid side is below that of the liquid side: 0.19 against 0.38 at 140 GPa and 4500 K, 0.30 against 0.46 at 330 GPa and 5500 K. These are PALEOS table values, not compared here with published data for solid and liquid iron. This difference is why, on an adiabat, the liquidus rule uses the liquid branch and not the combined profile, liquid above the ICB and solid below it:
+
+- Below the ICB, the combined profile follows the shallower adiabat of the solid side.
+- In 1 $M_\oplus$ solves with Fe-S and pure-iron cores, the combined profile falls below the liquidus within 1 to 2 node segments below an ICB, also when the liquid just above that ICB is above the liquidus.
+- The first liquidus root of the combined profile therefore lies next to the ICB for a wide range of inner-core masses, so it does not fix the ICB; the root of the liquid branch does.
+
+### Composition
+
+`Anzellini13-iron`, of Anzellini et al. (2013)[^cite-anzellini2013], and `Sinmyo19-iron`, of Sinmyo et al. (2019)[^cite-sinmyo2019], are melting curves of pure iron. S, O and C each form a eutectic with iron, which melts below pure iron:
+
+- Fe-S: near 3550 K at 254 GPa, run 11 of Table 1 of Mori et al. (2017)[^cite-mori2017], against 5497 K on the Anzellini curve.
+- Fe-C: about 3750 K at 330 GPa, extrapolated from data to 255 GPa in Sect. 4.1 of Mashino et al. (2019)[^cite-mashino2019], against 6229 K on the Anzellini curve.
+- Fe-FeO: Oka et al. (2019)[^cite-oka2019] measured the eutectic to 204 GPa.
+
+An outer core with these elements can melt below the pure-iron curves, so a named curve gives too large an inner core. For such a core, pass the alloy liquidus as a callable.
+
+### Light elements in each layer
+
+The light-element fractions of each layer are inputs: the model does not move light elements to the outer core when the core freezes. The light-element mass of the core, $M_\mathrm{ic} w_\mathrm{ic} + M_\mathrm{oc} w_\mathrm{oc}$ (layer masses times their light-element mass fractions), therefore changes when the ICB moves ([bulk composition](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core)). A caller that keeps the bulk composition sets the layer fractions for each solve.
+
+### Limits
+
+- The light-element laws, calibrated on liquid iron, apply to solid iron on the solid side, with one warning per process.
+- The solid side refuses `CoreAlloy:H-Luo` with `CoreAlloyError`, a `ValueError`: its carrier volume is that of a liquid of iron and water, from Luo et al. (2024)[^cite-luo2024].
+- A named curve with an alloy outer core gives a warning at each call of `main`.
+- A `ValueError` refuses the liquidus rule in 3 cases:
+    - under `outer_solver = "newton"`;
+    - under `temperature_mode = "adiabatic_from_cmb"`, unless the caller passes a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller) to `main` (`validate_config` does not see the table and refuses the pair);
+    - when a core node has a temperature or a liquidus that is not finite.
+- On the JAX structure path, a two-layer core falls back to the numpy path.
+- On an adiabat, a `RuntimeError` stops the solve when the liquid branch and the temperature table of a pass differ by more than a relative $10^{-12}$ above the ICB, where both take one adiabat.
+
+### Where this is checked
+
+[Inner-core boundary of a two-layer core](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core), [liquid iron side](../Validation/equation_of_state.md#light-element-outer-cores-on-the-liquid-iron-side), [a two-layer Earth core against PREM, the Preliminary Reference Earth Model](../Validation/mass_radius.md#a-two-layer-earth-core-against-prem). Settings: [configuration](../How-to/configuration.md); core arrays: [usage](../How-to/usage.md#core-arrays); a run: [tutorial](../Tutorials/two_layer_core.md).
 
 ---
 
@@ -299,3 +426,19 @@ The mixing framework supports several planned extensions without requiring chang
 - H$_2$O-MgSiO$_3$ binodal suppression, once a generalizable miscibility model for this system becomes available.
 - Additional volatile EOS (He, CO$_2$, NH$_3$) with their own per-component sigmoid parameters.
 - Physically-motivated partition laws (`D_const`, `solubility`) plugging into the `partition_rule` hook, together with a low-density hydrous-melt phase or partial-molar-volume treatment for dissolved water.
+
+[^cite-luo2024]: H. Luo, C. Dorn, J. Deng, *[The interior as the dominant water reservoir in super-Earths and sub-Neptunes](https://doi.org/10.1038/s41550-024-02347-z)*, Nature Astronomy, 8, 1399-1407, 2024. [SciX](https://scixplorer.org/abs/2024NatAs...8.1399L/abstract).
+[^cite-mashino2019]: I. Mashino, F. Miozzi, K. Hirose, G. Morard, R. Sinmyo, *[Melting experiments on the Fe-C binary system up to 255 GPa: Constraints on the carbon content in the Earth's core](https://doi.org/10.1016/j.epsl.2019.03.020)*, Earth and Planetary Science Letters, 515, 135-144, 2019. [SciX](https://scixplorer.org/abs/2019E%26PSL.515..135M/abstract).
+[^cite-mori2017]: Y. Mori, H. Ozawa, K. Hirose, R. Sinmyo, S. Tateno, G. Morard, Y. Ohishi, *[Melting experiments on Fe-Fe$_3$S system to 254 GPa](https://doi.org/10.1016/j.epsl.2017.02.021)*, Earth and Planetary Science Letters, 464, 135-141, 2017. [SciX](https://scixplorer.org/abs/2017E%26PSL.464..135M/abstract).
+[^cite-oka2019]: K. Oka, K. Hirose, S. Tagawa, Y. Kidokoro, Y. Nakajima, Y. Kuwayama, G. Morard, N. Coudurier, G. Fiquet, *[Melting in the Fe-FeO system to 204 GPa: Implications for oxygen in Earth's core](https://doi.org/10.2138/am-2019-7081)*, American Mineralogist, 104, 1603-1607, 2019. [SciX](https://scixplorer.org/abs/2019AmMin.104.1603O/abstract).
+[^cite-gupta2025]: A. Gupta, L. Stixrude, H. E. Schlichting, *[The Miscibility of Hydrogen and Water in Planetary Atmospheres and Interiors](https://doi.org/10.3847/2041-8213/adb631)*, The Astrophysical Journal Letters, 982(2), L35, 2025. [SciX](https://scixplorer.org/abs/2025ApJ...982L..35G/abstract).
+[^cite-hirose2021]: K. Hirose, B. Wood, L. Vočadlo, *[Light elements in the Earth's core](https://doi.org/10.1038/s43017-021-00203-6)*, Nature Reviews Earth & Environment, 2, 645-658, 2021. [SciX](https://scixplorer.org/abs/2021NRvEE...2..645H/abstract).
+[^cite-kempton2023]: E. M.-R. Kempton, M. Lessard, M. Malik, L. A. Rogers, K. E. Futrowsky, J. Ih, N. Marounina, C. E. Romero-Mirza, *[Where are the Water Worlds?: Self-consistent Models of Water-rich Exoplanet Atmospheres](https://doi.org/10.3847/1538-4357/ace10d)*, The Astrophysical Journal, 953, 57, 2023. [SciX](https://scixplorer.org/abs/2023ApJ...953...57K/abstract).
+[^cite-li2019]: J. Li, B. Chen, M. Mookherjee, G. Morard, *[Carbon versus Other Light Elements in Earth's Core](https://doi.org/10.1017/9781108677950.003)*, in Deep Carbon, eds. B. N. Orcutt, I. Daniel, R. Dasgupta, Cambridge University Press, 40-65, 2019.
+[^cite-rogers2025]: J. G. Rogers, E. D. Young, H. E. Schlichting, *[Redefining interiors and envelopes: hydrogen-silicate miscibility and its consequences for the structure and evolution of sub-Neptunes](https://doi.org/10.1093/mnras/staf1940)*, Monthly Notices of the Royal Astronomical Society, 544(4), 3496-3511, 2025. [SciX](https://scixplorer.org/abs/2025MNRAS.544.3496R/abstract).
+[^cite-umemoto2020]: K. Umemoto, K. Hirose, *[Chemical compositions of the outer core examined by first principles calculations](https://doi.org/10.1016/j.epsl.2019.116009)*, Earth and Planetary Science Letters, 531, 116009, 2020. [SciX](https://scixplorer.org/abs/2020E%26PSL.53116009U/abstract).
+[^cite-tsutsumi2025]: Y. Tsutsumi, N. Sakamoto, K. Hirose, S. Mita, S. Yokoo, H. Hsu, H. Yurimoto, *[Origin of Earth's hydrogen and carbon constrained by their core-mantle partitioning and bulk Earth abundance](https://doi.org/10.1038/s41467-025-65729-5)*, Nature Communications, 16, 10038, 2025. [SciX](https://scixplorer.org/abs/2025NatCo..1610038T/abstract).
+[^cite-labrosse2015]: S. Labrosse, *[Thermal evolution of the core with a high thermal conductivity](https://doi.org/10.1016/j.pepi.2015.02.002)*, Physics of the Earth and Planetary Interiors, 247, 36-55, 2015. [SciX](https://scixplorer.org/abs/2015PEPI..247...36L/abstract).
+[^cite-nimmo2015]: F. Nimmo, *[Energetics of the Core](https://doi.org/10.1016/B978-0-444-53802-4.00139-1)*, in Treatise on Geophysics, 2nd edition, vol. 8, 27-55, Elsevier, 2015.
+[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).
+[^cite-sinmyo2019]: R. Sinmyo, K. Hirose, Y. Ohishi, *[Melting curve of iron to 290 GPa determined in a resistance-heated diamond-anvil cell](https://doi.org/10.1016/j.epsl.2019.01.006)*, Earth and Planetary Science Letters, 510, 45-52, 2019. [SciX](https://scixplorer.org/abs/2019E%26PSL.510...45S/abstract).

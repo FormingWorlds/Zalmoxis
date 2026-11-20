@@ -229,6 +229,7 @@ def solve_structure_via_jax(
     binodal_T_scale=None,
     volatile_profile=None,  # VolatileProfile: single-volatile wet mantle
     surface_pressure=0.0,  # target surface pressure [Pa], for pad_after_stop
+    core_temperature_arrays=None,  # (P_arr, T_arr): core T(P), checked by solver.main
 ):
     """Drop-in replacement for ``solve_structure`` using the JAX path.
 
@@ -281,6 +282,8 @@ def solve_structure_via_jax(
 
     # Core cache: paleos_unified (load via _ensure_unified_cache)
     core_lm = layer_mixtures['core']
+    if 'inner_core' in layer_mixtures:
+        raise ValueError('JAX path requires a one-layer core, got an inner_core layer')
     # The core kernel reads one EOS table; a core with light elements solves on numpy.
     core_eos = core_lm.components[0]
     if is_alloy_mixture(core_lm):
@@ -449,16 +452,23 @@ def solve_structure_via_jax(
     else:
         # One tabulation per temperature function (constant within an inner iteration).
         _adia_cache = interpolation_cache.setdefault('_jax_adiabat_cache', {})
-        _key = id(temperature_function)
-        _entry = _adia_cache.get(_key)
-        if _entry is None or _entry[0] is not temperature_function:
-            _entry = (temperature_function, *_tabulate_adiabat(radii_arr, temperature_function))
-            # Persists across main() calls (solver._interpolation_cache), so it fills to the cap.
-            if len(_adia_cache) > 64:
-                _adia_cache.pop(next(iter(_adia_cache)))
-            _adia_cache[_key] = _entry
-        _, T_axis_grid, T_values = _entry
+
+        def _tab(f):
+            _entry = _adia_cache.get(id(f))
+            if _entry is None or _entry[0] is not f:
+                _entry = (f, *_tabulate_adiabat(radii_arr, f))
+                # Persists across main() calls (solver._interpolation_cache): fills to the cap.
+                if len(_adia_cache) > 64:
+                    _adia_cache.pop(next(iter(_adia_cache)))
+                _adia_cache[id(f)] = _entry
+            return _entry[1:]
+
+        T_axis_grid, T_values = _tab(temperature_function)
         T_axis_is_radius = False
+        core_tf = getattr(temperature_function, 'core', None)  # a layered T: its core table
+        if core_temperature_arrays is None and core_tf is not None:
+            grid, values = _tab(core_tf)
+            core_temperature_arrays = (10.0**grid, values)
 
     if _PROFILE:  # pragma: no cover - dev profiling, gated on ZALMOXIS_JAX_PROFILE
         _PHASE_TIMES['adiabat_tab'] += _time.perf_counter() - _p_t0
@@ -575,6 +585,11 @@ def solve_structure_via_jax(
                 'vol_rho_min': _COMPONENT_RHO_MIN.get(vol_eos, _rho_min_cfg),
                 'vol_rho_scale': _COMPONENT_RHO_SCALE.get(vol_eos, _rho_scale_cfg),
             }
+        )
+
+    if core_temperature_arrays is not None:  # the core density reads T(P) of the table
+        jax_args['core_T_P'], jax_args['core_T_values'] = (
+            np.asarray(a, dtype=float) for a in core_temperature_arrays
         )
 
     global _CALL_COUNT, _TOTAL_WALL

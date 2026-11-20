@@ -949,9 +949,9 @@ class TestMidpointAdiabat:
     @pytest.mark.parametrize('anchor', ['surface', 'cmb'])
     def test_default_call_uses_the_0p0025_substeps(self, monkeypatch, anchor):
         """A default call evaluates nabla twice per substep, with ceil(|d ln P| / 0.0025)
-        substeps per segment above 1e5 Pa: the count pins the default h, because the 1 K bound
-        of the real profiles does not decide h (0.0065 and 0.008 pass it, 0.0055 and 0.007
-        fail)."""
+        substeps per segment above 1e5 Pa: the count pins the default h, because the 1 K
+        bound of the real profiles also admits a larger h (0.005 gives 0.50 K, 0.0055 gives
+        1.29 K)."""
         calls = []
         _stub_adiabat(monkeypatch, lambda P, T: 0.1, calls)  # T stays inside the node caps
         P = np.geomspace(3.6e11, 3e4, 40)  # the top segment crosses 1e5 Pa
@@ -1347,7 +1347,12 @@ def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
     import os
 
     import zalmoxis.solver as zs
-    from tests.test_surface_node import euler_adiabat, spy_temperature_function
+    from tests.test_surface_node import (
+        _assert_padded,
+        _stop_below_r,
+        euler_adiabat,
+        spy_temperature_function,
+    )
     from tools.validation import adiabat_profiles as ap
     from zalmoxis import get_zalmoxis_root
     from zalmoxis.config import load_material_dictionaries
@@ -1362,11 +1367,13 @@ def test_padded_top_shell_lookup_follows_the_adiabat(monkeypatch):
         return table(pressure, *args, **kwargs)
 
     monkeypatch.setattr(zs, '_adiabat_table', spy_table)
-    cfg = ap._default_config(0)
+    cfg = dict(ap._default_config(0), wall_timeout=1e6)
     melt = ap._melt('config', cfg)
+    misses = _stop_below_r(monkeypatch)  # whether a solve pads depends on round-off
     res = zs.main(cfg, load_material_dictionaries(), melt, os.path.join(root, 'input'))
     r, P, T = (np.asarray(res[k], float) for k in ('radii', 'pressure', 'temperature'))
-    assert res['padded'] and P[-1] == 0.0
+    assert res['padded']
+    _assert_padded(P, misses)
     assert T[-1] == pytest.approx(cfg['surface_temperature'])
     top = int(np.flatnonzero(P > 0)[-1])
     assert tables, 'the solve built no T(P) table'
@@ -1650,3 +1657,119 @@ class TestAdiabatTable:
             np.testing.assert_array_equal(t[kept + q.size :], tail)
 
         check()
+
+
+@pytest.mark.unit
+class TestLayerTables:
+    """The T(P) table of a pass split at its CMB (``_layer_tables``) and its lookup
+    (``_table_lookup``): each layer reads its own nodes, and past an end the adiabat of the end
+    interval goes on (``_table_end``) instead of a constant T."""
+
+    LP, TS = np.log10([1e11, 2e11]), np.array([4000.0, 5000.0])
+
+    @pytest.mark.physics_invariant
+    @pytest.mark.reference_pinned
+    def test_the_ends_follow_the_power_law_of_their_end_interval(self):
+        """T = T_end (P / P_end)^n with n of the end interval (analytical law): 3200 K at
+        5e10 Pa below (1e11 Pa, 4000 K), (2e11 Pa, 5000 K), 6250 K at 4e11 Pa above it. A
+        table of 1 point, or with a flat end interval, holds its end T."""
+        from zalmoxis.solver import _table_end
+
+        assert _table_end(self.LP, self.TS, top=False)(math.log10(5e10)) == pytest.approx(
+            3200.0, rel=1e-12
+        )
+        assert _table_end(self.LP, self.TS)(math.log10(4e11)) == pytest.approx(
+            6250.0, rel=1e-12
+        )
+        assert _table_end(self.LP[:1], self.TS[:1])(13.0) == pytest.approx(4000.0, rel=0)
+        assert _table_end(np.array([11.0, 11.0]), self.TS)(13.0) == 5000.0
+
+    def test_the_lookup_continues_past_the_bottom_only_when_asked(self):
+        """Inside the table T is linear in log10 P; past the top the end adiabat goes on; past
+        the bottom T holds the bottom value, or with ``low`` follows the end adiabat; T stays in
+        100 K to 1e5 K."""
+        from zalmoxis.solver import _table_lookup
+
+        mid = 10 ** np.mean(self.LP)
+        assert _table_lookup(self.LP, self.TS)(mid) == pytest.approx(4500.0, rel=1e-12)
+        assert _table_lookup(self.LP, self.TS)(4e11) == pytest.approx(6250.0, rel=1e-12)
+        assert _table_lookup(self.LP, self.TS)(5e10) == pytest.approx(4000.0, rel=0)
+        assert _table_lookup(self.LP, self.TS, low=True)(5e10) == pytest.approx(
+            3200.0, rel=1e-12
+        )
+        assert _table_lookup(self.LP, self.TS, low=True)(1.0) == pytest.approx(100.0, rel=0)
+        assert _table_lookup(self.LP, self.TS)(1e30) == pytest.approx(1e5, rel=0)
+
+    def test_each_layer_reads_its_own_nodes_past_a_moved_cmb(self):
+        """The mantle table holds the mantle nodes only, the core part the core nodes sorted by
+        P; a mantle query at a pressure of the core of the table's pass reads the mantle end
+        adiabat, not a core temperature. With fewer than 2 nodes in a layer the core part is
+        None and the mantle part is the table of all nodes."""
+        from zalmoxis.solver import _adiabat_table, _layer_tables, _table_lookup
+
+        p = np.geomspace(3.6e11, 1e5, 20)
+        m = np.linspace(1e23, M_E, 20)
+        t = np.where(np.arange(20) < 8, 9000.0, 3000.0) * (p / 1e5) ** 0.01
+        cmb = 0.5 * (m[7] + m[8])
+        shell = lambda q, t_top, m_: t_top * (q / q[0]) ** 0.1  # noqa: E731
+        mantle, core = _layer_tables(p, t, m, cmb, shell)
+        assert mantle[1].max() < 9000.0 and core[1].min() >= 9000.0
+        np.testing.assert_array_equal(core[0], np.log10(p[:8][::-1]))
+        np.testing.assert_array_equal(core[1], t[:8][::-1])
+        lp, ts = mantle
+        q = p[3]  # a core pressure of the table's pass
+        n = math.log(ts[-1] / ts[-2]) / (math.log(10) * (lp[-1] - lp[-2]))
+        assert _table_lookup(*mantle)(q) == pytest.approx(
+            ts[-1] * (q / 10 ** lp[-1]) ** n, rel=1e-12
+        )
+        whole = _adiabat_table(p, t, m, shell)
+        for c in (0.5 * m[0], 0.5 * (m[-2] + m[-1])):
+            mantle, core = _layer_tables(p, t, m, c, shell)
+            assert core is None
+            for a, b in zip(mantle, whole):
+                np.testing.assert_array_equal(a, b)
+
+
+@pytest.mark.unit
+def test_the_structure_odes_read_the_core_table_of_a_layered_t_in_the_core(monkeypatch):
+    """A T function with a core table (``.core``) gives every ODE evaluation below the core mass
+    the core table and every one above it the T function, as the node rule does."""
+    import zalmoxis.structure_model as sm
+    from zalmoxis.mixing import LayerMixture
+
+    calls, odes = [], sm.coupled_odes
+
+    def spy(r, y, *a, **k):
+        calls.append((y[0], a[5]))
+        return odes(r, y, *a, **k)
+
+    def t_mantle(r, p):
+        return 1111.0
+
+    t_mantle.core = lambda r, p: 9999.0
+    monkeypatch.setattr(
+        sm, 'calculate_mixed_density', lambda p, *a, **k: 5000.0 if p > 0 else None
+    )
+    monkeypatch.setattr(sm, 'coupled_odes', spy)
+    mix = LayerMixture(['mock:uniform'], [1.0])
+    radii, cmb = np.linspace(0.0, 4e6, 40), 3e23
+    sm.solve_structure(
+        {'core': mix, 'mantle': mix},
+        cmb,
+        1e30,
+        radii,
+        0.98,
+        1e-8,
+        1e-10,
+        4e5,
+        {},
+        {},
+        [0.0, 0.0, 3e11],
+        None,
+        None,
+        temperature_function=t_mantle,
+    )
+    core = np.array([sm.is_core(m_, cmb) for m_, _ in calls])
+    temps = np.array([t for _, t in calls])
+    assert core.any() and (~core).any()
+    assert np.all(temps[core] == 9999.0) and np.all(temps[~core] == 1111.0)

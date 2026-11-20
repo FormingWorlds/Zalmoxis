@@ -1,6 +1,6 @@
 # Coupling to PROTEUS
 
-This page is the **theory** of how Zalmoxis plugs into a PROTEUS coupled run: where the structure solver sits in the per-iteration sequence, what the wrapper does on init and on every dynamic update, which `hf_row` keys it consumes and produces, and where the known landmines live. For the practical TOML recipe, see the [PROTEUS coupling how-to](../How-to/proteus_coupling.md).
+This page is the **theory** of how Zalmoxis plugs into a PROTEUS coupled run: where the structure solver sits in the per-iteration sequence, what the wrapper does on init and on every dynamic update, which `hf_row` keys it consumes and produces, and which known coupling problems a user can meet. For the practical TOML recipe, see the [PROTEUS coupling how-to](../How-to/proteus_coupling.md).
 
 When Zalmoxis runs inside PROTEUS, the coupling is at the **function-call level**, not at the file level. PROTEUS does not write a Zalmoxis TOML, does not invoke `python -m zalmoxis`, and does not read `output/planet_profile.txt`. The wrapper in `proteus/interior_struct/zalmoxis.py` builds a Python dict from the PROTEUS configuration and calls `zalmoxis.solver.main()` (or `solve_miscible_interior()` when the global-miscibility path is active). State exchange happens through the shared `hf_row` dictionary, plus one file (`zalmoxis_output.dat`) that Aragog reads back as its mantle mesh.
 
@@ -95,7 +95,7 @@ Zalmoxis reads the current planet state from `hf_row`, runs its structure solve,
 | `P_surf` | Surface pressure [bar in `hf_row`, scaled to Pa internally] | Atmospheric BC for the structure solve, when finite and positive. |
 | `H2O_kg_total`, `CO2_kg_total`, ... | Volatile inventory [kg] | Subtracted from `mass_tot * M_earth` to give the dry interior `planet_mass` passed to Zalmoxis. |
 | `H2O_kg_liquid`, `H2_kg_liquid` | Dissolved volatile masses [kg] | Build the `VolatileProfile` when `dry_mantle = false`. |
-| `T_eqm`, `f_accretion`, `f_differentiation` | Accretion-mode IC inputs | Drive White & Li initial thermal state when `temperature_mode = "accretion"`. |
+| `T_eqm`, `f_accretion`, `f_differentiation` | Accretion-mode IC inputs | Drive the initial thermal state of White & Li (2025)[^cite-white2025] when `temperature_mode = "accretion"`. |
 
 ### Writes to `hf_row`
 
@@ -329,6 +329,28 @@ The structure solve runs through Zalmoxis's JAX + diffrax path by default (`use_
 
 With `use_jax = true` and `temperature_arrays` supplied, Zalmoxis takes T from the arrays in every part of the solve: the JAX structure integration, its numpy fallback, the density update at the nodes inside `_solve`, and the output temperature profile. Zalmoxis then ignores `temperature_function`, and the wrapper withholds it on JAX-viable EOS and volatile layouts.
 
+## Core temperature from the caller
+
+How does a caller set the temperature of the core, not only of the mantle?
+
+`main` takes `core_temperature_arrays = (P_arr, T_arr)`, a table of the core temperature $T$ in K against the pressure $P$ in Pa. Each core node and each step of the structure integration in the core then reads $T$ from the table. The mantle keeps its own temperature: `temperature_function`, or `temperature_arrays` with `use_jax`.
+
+A core node is a node whose enclosed mass is below the core mass. The same rule picks the core material, so the temperature and the material change at the same node. The table applies in the outer and the inner core, on the numpy and the JAX path, in the core arrays, and in the rule that places the inner-core boundary of a [two-layer core](mixing.md#two-layer-core).
+
+Between the table points, $T$ is linear in $P$. Outside the table, $T$ continues with the slope of the end interval, since the central-pressure search tries pressures beyond the final profile.
+
+In [Step 4 of the two-layer core tutorial](../Tutorials/two_layer_core.md#step-4-give-the-core-temperature-as-a-table), a table that meets the iron melting curve of Anzellini et al. (2013)[^cite-anzellini2013] at 330 GPa puts the inner-core boundary at 330.16 GPa and 0.0423 of the core mass inside it.
+
+The limits:
+
+- `main` raises `ValueError` before the solve for a table that does not have the form of the [API reference](../Reference/api/zalmoxis.solver.md), and for a call with no mantle temperature.
+- A core without a temperature-dependent equation of state ignores the table; the result has `core_T_used = False`.
+- Core nodes outside the table give a warning. A node beyond the table by more than 0.1 of `P_arr[-1] - P_arr[0]` leaves the result not accepted (`converged` is False).
+- `main` accepts `core_liquidus` with `temperature_mode = 'adiabatic_from_cmb'` when a table is given. `validate_config` does not see the table and refuses that pair.
+- An accepted result raises `StructureInvariantError` when a core node has $T \le 0$, or when a node differs from its source by more than a relative $10^{-9}$.
+
+**Where this is checked.** [Core temperature from a table given by the caller](../Validation/hydrostatic_structure.md#core-temperature-from-a-table-given-by-the-caller).
+
 ## Coupling pitfalls
 
 The function-call coupling is robust at the file boundary, but several edges have known traps. New code paths should re-check these before claiming behavioural neutrality.
@@ -379,3 +401,4 @@ The wrapper itself lives in the PROTEUS repository, not in Zalmoxis. The single 
 [^cite-stixrude2022]: L. Stixrude, C. Lithgow-Bertelloni, *[Thermal expansivity, heat capacity and bulk modulus of the mantle](https://doi.org/10.1093/gji/ggab394)*, Geophysical Journal International, 228(2), 1119-1149, 2022. [SciX](https://scixplorer.org/abs/2022GeoJI.228.1119S/abstract).
 [^cite-belonoshko2005]: A. B. Belonoshko, N. V. Skorodumova, A. Rosengren, R. Ahuja, B. Johansson, L. Burakovsky, D. L. Preston, *[High-pressure melting of MgSiO$_3$](https://doi.org/10.1103/PhysRevLett.94.195701)*, Physical Review Letters, 94(19), 195701, 2005. [SciX](https://scixplorer.org/abs/2005PhRvL..94s5701B/abstract).
 [^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).
+[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).

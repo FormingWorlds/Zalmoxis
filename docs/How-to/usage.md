@@ -134,11 +134,27 @@ A call of `post_processing` with `id_mass` puts the mass label into the names of
 - **Phase state** (bottom center): colored bars showing the thermodynamically stable phase at each depth, read from the PALEOS table's phase column. Liquid iron in the core (at 3000 K surface temperature), bridgmanite (solid MgSiO$_3$) in the mantle, with a thin liquid layer near the surface.
 - **Mass enclosed** (bottom right): enclosed mass as a function of radius. The CMB is visible as the kink where the slope changes from the dense core to the lighter mantle.
 
+## Core arrays
+
+Every solve whose profile reaches the core mass returns `result['core']` (otherwise it is `None`, as for a pass cut before its pressure solve): `r`, `m`, `P`, `rho`, `g`, `T` (m, kg, Pa, kg/m$^3$, m/s$^2$, K) at the core nodes plus a node at the core mass, the core-mantle boundary (CMB); `phase` per node (1 inner core, 0 outer core); `w_<el>` per light element; and `M_ic` \[kg\], `R_icb` \[m\], `P_icb` \[Pa\], `solid_above_icb_mass_fraction` and the flag `solid_above_icb`, all at the inner-core mass of the solved layers (`P_icb` is the pressure at `M_ic` by the [rule of the inner-core boundary](../Explanations/mixing.md#the-inner-core-boundary), never below the pressure of the node at the core mass); `w_layers` holds the light-element fractions of each layer. The CMB node comes from an event of the structure integration at the core mass. Every accepted solve asserts that this node holds the core mass to $10^{-10}$ (`core_cmb_node`), that each core-array density is that of its layer EOS to $10^{-6}$ (`core_density_eos`), that the light-element masses of the nodes equal $M_\mathrm{ic} w_\mathrm{ic} + M_\mathrm{oc} w_\mathrm{oc}$ of the layer compositions to $10^{-10}$ (`core_element_mass`) and that no core node lies outside the table of its side (`core_table_box`). The node at the core mass takes the layer of the core just below it for its density and phase.
+
+Every result carries 3 keys of the inner-core boundary (ICB) test, which hold values only with a two-layer core:
+
+- `icb_converged` is True unless the returned pass fails the ICB tests ([inner-core boundary](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core)); a solve with no ICB rule keeps True.
+- `icb_superheat` \[K\] is the superheat $S$ of the outer-core liquid at the ICB on an adiabat with `core_liquidus`: positive where the liquid lies above the melting curve and negative below it, taken at the centre with no inner core and, with a core solid to the core-mantle boundary, at the CMB point with the core-side temperature of [the temperature at the CMB point](../Explanations/mixing.md#the-temperature-at-the-cmb-point). It is `None` on a given profile and without `core_liquidus`.
+- `icb_adiabat` \[kg\] is the inner-core mass that the adiabat of the returned pass took. It is `None` without an adiabat or without a two-layer core.
+
+A solve with a [core temperature table](../Explanations/proteus_coupling.md#core-temperature-from-the-caller) (`core_temperature_arrays`) carries 3 more keys:
+
+- `core_T_used` is True when the table set the core temperature, and False when the core has no temperature-dependent equation of state and the table is unused; an unused table counts no node in the next 2 keys.
+- `core_T_nodes_outside` is the number of core nodes whose pressure lies outside the table.
+- `core_T_max_excess` is the largest distance of such a node beyond the table, as a fraction of the table range `P_arr[-1] - P_arr[0]`; 0.0 when no node lies outside. Above 0.1 the result is not accepted (`converged` is False).
+
 ## Parameter grids
 
 To sweep over combinations of parameters and plot the results, see the [parameter grids](grids.md) guide.
 
 ## See also
 
-- [First run](../Tutorials/firstrun.md) walks through a single Earth-mass run end to end.
+- [First run](../Tutorials/firstrun.md) walks through a single Earth-mass run from start to finish.
 

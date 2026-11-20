@@ -61,34 +61,48 @@ def _eos(kw):
 
 def _reference(kw, method='DOP853'):
     """scipy ``solve_ivp`` (``method``, rtol 1e-13, atol 1e-15) of d ln T / d ln P = nabla over
-    each node segment, with the rules of the routine: the mixture of the node the segment fills,
-    T held below 1e5 Pa (a padded top, P = 0, counts as 1e5 Pa) and for a T-independent layer,
-    and the node caps. Returns (T, count of nabla reads that were None or not positive)."""
+    each node segment, with the rules of the routine: a segment that holds the CMB is cut
+    there, with ln P linear in the enclosed mass between its nodes, and each piece takes its
+    own mixture, else the mixture of the node the segment fills; T held below 1e5 Pa (a
+    padded top, P = 0, counts as 1e5 Pa) and for a T-independent layer, and the node caps.
+    The stored profiles hold no inner core; the unit tests of tests/test_core_two_phase.py
+    check the ICB cut. Returns (T, count of nabla reads that were None or not positive)."""
     from scipy.integrate import solve_ivp
 
     from zalmoxis.mixing import get_mixed_nabla_ad
     from zalmoxis.structure_model import get_layer_mixture
 
+    assert not kw.get('icb_mass'), 'the reference has no ICB cut'
     P, m, T, order, inward = ap.node_walk(kw)
-    eos, bad, lo = _eos(kw), [0], (0.0 if inward else 100.0)
+    eos, bad, lo, cmb = _eos(kw), [0], (0.0 if inward else 100.0), kw['cmb_mass']
+
+    def mixture(mass):
+        return get_layer_mixture(mass, cmb, kw['core_mantle_mass'], kw['layer_mixtures'])
+
+    def rhs(x, y, mx):
+        v = get_mixed_nabla_ad(math.exp(x), math.exp(y[0]), mx, *eos)
+        if v is None or not v > 0:
+            bad[0] += 1
+            return [0.0]
+        return [v]
+
     for i, j in order:
-        mx = get_layer_mixture(
-            m[i], kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
-        )
-        x0, x1 = math.log(max(P[j], P_FLOOR)), math.log(max(P[i], P_FLOOR))
-        if not mx.has_tdep() or (x1 - x0) * (1 if inward else -1) <= 0:
-            T[i] = T[j]
-            continue
-
-        def rhs(x, y, mx=mx):
-            v = get_mixed_nabla_ad(math.exp(x), math.exp(y[0]), mx, *eos)
-            if v is None or not v > 0:
-                bad[0] += 1
-                return [0.0]
-            return [v]
-
-        y = solve_ivp(rhs, (x0, x1), [math.log(T[j])], method=method, rtol=1e-13, atol=1e-15)
-        T[i] = min(max(math.exp(y.y[0, -1]), lo), 1e5)
+        ends = [(m[j], P[j]), (m[i], P[i])]
+        (m_lo, p_lo), (m_hi, p_hi) = sorted(ends)
+        step = mixture(cmb * (1 - 1e-9)) is not mixture(cmb * (1 + 1e-9))
+        if p_lo > 0 and p_hi > 0 and m_lo < cmb < m_hi and step:  # ln P linear in m
+            ends.insert(1, (cmb, math.exp(np.interp(cmb, (m_lo, m_hi), np.log((p_lo, p_hi))))))
+        t = T[j]
+        for (m_a, p_a), (m_b, p_b) in zip(ends, ends[1:]):
+            mx = mixture(m[i] if m_b == m[i] else 0.5 * (m_a + m_b))
+            x0, x1 = math.log(max(p_a, P_FLOOR)), math.log(max(p_b, P_FLOOR))
+            if not mx.has_tdep() or (x1 - x0) * (1 if inward else -1) <= 0:
+                continue
+            y = solve_ivp(
+                rhs, (x0, x1), [math.log(t)], method=method, rtol=1e-13, atol=1e-15, args=(mx,)
+            )
+            t = min(max(math.exp(y.y[0, -1]), lo), 1e5)
+        T[i] = t
     return T, bad[0]
 
 
@@ -365,3 +379,32 @@ def test_the_top_cell_lookup_does_not_flip_with_the_padding(profiles, case):
         on = y >= math.log(P_FLOOR)
         diff = np.max(np.abs(look[on] - np.interp(y[on], x, padded)))
         assert diff <= bound, (p_top, diff)
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.parametrize('case', ['default_k0', 'default_k1', 'default_k2', 'default_k3'])
+def test_the_cmb_point_of_the_icb_readers_is_on_the_core_adiabat(profiles, case):
+    """Case V2 of the CMB point. On each stored default profile the CMB point of the ICB
+    readers, with the core gradient stepped from the last core node (``cmb_point_temperature``),
+    meets the adiabat with a node inserted at the core mass to 1e-6 K (self-consistency of the
+    step); T linear in ln P across the segment lies more than 3 K above it."""
+    from zalmoxis.core_profile import _core_nodes
+    from zalmoxis.eos.temperature import cmb_point_temperature, compute_adiabatic_temperature
+    from zalmoxis.mixing import get_mixed_nabla_ad
+
+    kw = profiles[case][1]
+    m, p, r = (np.asarray(kw[k], float) for k in ('mass_enclosed', 'pressure', 'radii'))
+    cmb, T = kw['cmb_mass'], compute_adiabatic_temperature(**kw)
+    n = int(np.count_nonzero(m < cmb * (1 - 1e-12)))
+    core = kw['layer_mixtures']['core']
+    rule = cmb_point_temperature(lambda P, t: get_mixed_nabla_ad(P, t, core, *_eos(kw)))
+    _, pc, tc = (a[-1] for a in _core_nodes(m, p, T, cmb, cmb_point_rule=rule))
+    inserted = dict(
+        kw,
+        radii=np.insert(r, n, 0.5 * (r[n - 1] + r[n])),
+        pressure=np.insert(p, n, pc),
+        mass_enclosed=np.insert(m, n, cmb),
+    )
+    exact = compute_adiabatic_temperature(**inserted)[n]
+    assert abs(tc - exact) <= 1e-6, (tc, exact)
+    assert _core_nodes(m, p, T, cmb)[2][-1] - exact > 3.0

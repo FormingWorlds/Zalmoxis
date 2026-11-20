@@ -72,6 +72,22 @@ def _segment_temperature(T0, P_from, P_to, nabla_of, h, inward):
     return t
 
 
+def cmb_point_temperature(nabla_of):
+    """T rule ``(P_cmb, P_last, T_last) -> T`` [K] of the CMB point of the ICB readers on an
+    adiabat: the core gradient ``nabla_of(P, T)`` stepped outward from the last core node at
+    ``(P_last, T_last)`` to ``P_cmb`` with ``_segment_temperature``.
+
+    The adiabat integrates that piece inward from the CMB, so the 2 meet to the error of the
+    midpoint substeps over the piece, which grows with its length in ln P. Against the adiabat
+    with a node at the core mass: at most 1.2e-10 K on the 150-node default profiles (0.03 of
+    ln P in the CMB segment), 2.3e-3 K with the CMB in the middle of a segment of 0.24 of ln P
+    (the default profile thinned to 38 or 20 nodes). ``P_cmb >= P_last`` gives ``T_last``.
+    """
+    return lambda p_cmb, p_last, t_last: _segment_temperature(
+        t_last, p_last, p_cmb, nabla_of, ADIABAT_MAX_DLNP, False
+    )
+
+
 def _check_profile(T, first):
     """Raise StructureInvariantError unless ``T`` is finite and positive at every node and does
     not rise outward from node ``first`` (the anchor side of the integrated nodes)."""
@@ -101,14 +117,18 @@ def compute_adiabatic_temperature(
     binodal_T_scale=50.0,
     anchor='surface',
     cmb_temperature=None,
+    icb_mass=0.0,
     max_dlnp=ADIABAT_MAX_DLNP,
 ):
     """Compute an adiabatic temperature profile using native EOS gradient tables.
 
     Integrates d ln T / d ln P = nabla_ad(P, T) over each node segment with the midpoint rule in
-    ln P and ceil(|d ln P| / ``max_dlnp``) substeps. nabla_ad comes from ``get_mixed_nabla_ad``
-    with the layer mixture of the node the segment fills; for a multi-material layer it is
-    mass-fraction-weighted across the components. T is held below ``ADIABAT_P_FLOOR`` (1e5 Pa,
+    ln P and ceil(|d ln P| / ``max_dlnp``) substeps per piece. nabla_ad comes from
+    ``get_mixed_nabla_ad`` with the layer mixture of the node the segment fills; for a
+    multi-material layer it is mass-fraction-weighted across the components. A segment that
+    holds the CMB or the ICB is cut there into pieces that each take the mixture of their own
+    layer: the CMB with ln P linear in the enclosed mass between the 2 nodes, the ICB at the
+    pressure of ``core_profile.icb_pressure``. T is held below ``ADIABAT_P_FLOOR`` (1e5 Pa,
     where the PALEOS rock and iron tables start), and a padded node (P = 0) counts as that
     floor. T is also held over a layer without a T-dependent component and from the first
     substep where nabla_ad is missing or not positive. Each node is capped at 1e5 K, and with
@@ -161,6 +181,8 @@ def compute_adiabatic_temperature(
     cmb_temperature : float, optional
         Temperature at the core-mantle boundary, in K. Required when
         ``anchor='cmb'``.
+    icb_mass : float, optional
+        Inner-core mass [kg] of a two-layer core: its nodes take nabla_ad of the inner core.
     max_dlnp : float, optional
         Largest change of ln P in one substep, from 1e-4 to 1. Default
         ``ADIABAT_MAX_DLNP`` (0.0025).
@@ -179,6 +201,7 @@ def compute_adiabatic_temperature(
     StructureInvariantError
         The profile is not finite and positive at every node, or rises outward from its anchor.
     """
+    from ..core_profile import icb_pressure
     from ..mixing import any_component_is_tdep, get_mixed_nabla_ad
     from ..structure_model import get_layer_mixture
 
@@ -233,16 +256,33 @@ def compute_adiabatic_temperature(
         T[n - 1] = surface_temperature
         first, steps = 0, [(i, i + 1) for i in range(n - 2, -1, -1)]
 
-    for i, j in steps:  # node i takes its T from node j, with the mixture of node i
-        mixture = get_layer_mixture(
-            mass_enclosed[i], cmb_mass, core_mantle_mass, layer_mixtures
-        )
-        if not mixture.has_tdep():
-            T[i] = T[j]
-            continue
-        T[i] = _segment_temperature(
-            T[j], pressure[j], pressure[i], nabla_of(mixture), h, anchor != 'cmb'
-        )
+    def mixture_at(m):
+        return get_layer_mixture(m, cmb_mass, core_mantle_mass, layer_mixtures, icb_mass)
+
+    bounds = [
+        b
+        for b in sorted({icb_mass or 0.0, cmb_mass})  # the core boundaries
+        if b > 0 and mixture_at(b * (1 - 1e-9)) is not mixture_at(b * (1 + 1e-9))
+    ]
+    for i, j in steps:  # node i takes its T from node j, piece by piece across layer boundaries
+        m_i, t = mass_enclosed[i], T[j]
+        ends = [(mass_enclosed[j], pressure[j]), (m_i, pressure[i])]
+        if pressure[i] > 0 and pressure[j] > 0:
+            (m_lo, p_lo), (m_hi, p_hi) = sorted(ends)
+            cut = sorted((b for b in bounds if m_lo < b < m_hi), reverse=ends[0][0] > m_i)
+            # CMB: ln P linear in m; ICB: as its readers, on the core nodes and that CMB point
+            lp = (math.log(p_lo), math.log(p_hi))
+            p_cmb = math.exp(np.interp(cmb_mass, (m_lo, m_hi), lp))
+            top = (cmb_mass, p_cmb) if m_lo < cmb_mass < m_hi else (m_hi, p_hi)
+            ends[1:1] = [
+                (b, p_cmb if b == cmb_mass else icb_pressure((m_lo, top[0]), (p_lo, top[1]), b))
+                for b in cut
+            ]
+        for (m_a, p_a), (m_b, p_b) in zip(ends, ends[1:]):
+            mixture = mixture_at(m_i if m_b == m_i else 0.5 * (m_a + m_b))
+            if mixture.has_tdep():
+                t = _segment_temperature(t, p_a, p_b, nabla_of(mixture), h, anchor != 'cmb')
+        T[i] = t
     _check_profile(T, first)
     return T
 

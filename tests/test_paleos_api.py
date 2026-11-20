@@ -1246,3 +1246,113 @@ def test_a_serial_build_refuses_code_that_changed_since_import(
         'iron', outs[0], _tiny_grid(), n_workers=1, log_every=0
     )
     assert outs[0].is_file()
+
+
+# ---------------------------------------------------------------------------
+# Iron 2-phase: solid-side picker, worker row, generator
+# ---------------------------------------------------------------------------
+
+_REAL_PALEOS = getattr(__import__('paleos'), '__version__', '') != '0.0.0-mock'
+
+
+class TestGetIronSolidPhase:
+    """``_get_iron_solid_phase`` is the iron phase diagram without its melting test."""
+
+    @pytest.mark.parametrize(
+        ('P', 'T', 'expected'),
+        [
+            (150e9, 5000.0, 'solid-epsilon'),  # above the triple point and above melting
+            (60e9, 5000.0, 'solid-gamma'),  # above melting, above the gamma-epsilon line
+            (60e9, 2000.0, 'solid-epsilon'),
+            (10e9, 500.0, 'solid-alpha'),
+            (10e9, 800.0, 'solid-epsilon'),
+            (10e9, 3000.0, 'solid-gamma'),  # above melting
+            (1e5, 1000.0, 'solid-alpha'),
+            (1e5, 2500.0, 'solid-delta'),  # above melting
+            (6e9, 1500.0, 'solid-gamma'),  # above 5.2 GPa: no delta
+        ],
+    )
+    def test_branches_return_the_solid_label(self, P, T, expected):
+        assert paleos_api._get_iron_solid_phase(P, T) == expected
+
+    @pytest.mark.skipif(not _REAL_PALEOS, reason='needs the real PALEOS phase diagram')
+    def test_equals_the_paleos_phase_wherever_iron_is_solid(self):
+        """On a log grid of 1 bar to 10 TPa and 300 to 20000 K, the picker returns the PALEOS
+        label at every solid node and a solid label at every liquid node."""
+        from paleos.iron_eos import get_iron_phase
+
+        n_solid = n_liquid = 0
+        for P in np.logspace(5, 13, 81):
+            for T in np.logspace(np.log10(300.0), np.log10(2.0e4), 61):
+                stable, picked = get_iron_phase(P, T), paleos_api._get_iron_solid_phase(P, T)
+                assert picked.startswith('solid-')
+                if stable == 'liquid':
+                    n_liquid += 1
+                else:
+                    n_solid += 1
+                    assert picked == stable, (P, T)
+        assert n_solid > 1000 and n_liquid > 1000
+
+
+class TestWorker2PhaseIronRow:
+    """``_worker_2phase_row`` with the iron worker: solid label by the picker, liquid always."""
+
+    def test_iron_init_sets_the_solid_picker_and_the_liquid_eos(self):
+        paleos_api._worker_init('iron')
+        eos = paleos_api._WORKER_EOS
+        assert eos['picker'] is paleos_api._get_iron_solid_phase
+        assert eos['liquid'] is eos['unified']._eos_liquid
+        assert eos['phase_map'] is eos['unified']._phase_eos_map
+
+    def test_mgsio3_init_keeps_its_picker_and_wolf18(self):
+        paleos_api._worker_init('mgsio3')
+        eos = paleos_api._WORKER_EOS
+        assert eos['picker'] is paleos_api._get_mgsio3_solid_phase
+        assert eos['liquid'] is eos['wolf18']
+
+    def test_row_values_are_the_side_eos_values(self):
+        """At 60 GPa and 5000 K (above melting) the solid row is the fcc EoS and the liquid row
+        the liquid EoS, value for value."""
+        paleos_api._worker_init('iron')
+        eos = paleos_api._WORKER_EOS
+        _, s_text, l_text, nv_s, ns_s, nv_l, ns_l = paleos_api._worker_2phase_row(
+            (0, 60e9, [2000.0, 5000.0])
+        )
+        s_rows, l_rows = s_text.splitlines(), l_text.splitlines()
+        assert [r.split()[-1] for r in s_rows] == ['solid-epsilon', 'solid-gamma']
+        assert [r.split()[-1] for r in l_rows] == ['liquid', 'liquid']
+        assert (nv_s, ns_s, nv_l, ns_l) == (2, 0, 2, 0)
+        fcc = paleos_api._evaluate_eos(eos['phase_map']['solid-gamma'], 60e9, 5000.0)
+        liq = paleos_api._evaluate_eos(eos['liquid'], 60e9, 5000.0)
+        assert s_rows[1] == paleos_api._row(60e9, 5000.0, fcc, 'solid-gamma').rstrip('\n')
+        assert l_rows[1] == paleos_api._row(60e9, 5000.0, liq, 'liquid').rstrip('\n')
+
+
+class TestGenerate2PhaseIronTables:
+    """``generate_paleos_api_2phase_iron_tables`` writes the solid and liquid iron sides."""
+
+    def test_both_sides_written_with_their_labels_and_header(self, tmp_path):
+        grid = paleos_api.GridSpec(p_lo=5e10, p_hi=2e11, n_p=3, t_lo=2000.0, t_hi=6000.0, n_t=4)
+        out = paleos_api.generate_paleos_api_2phase_iron_tables(
+            tmp_path / 's' / 'solid.dat', tmp_path / 'l' / 'liquid.dat', grid
+        )
+        for side in ('solid', 'liquid'):
+            lines = Path(out[side]['path']).read_text().splitlines()
+            head = [ln for ln in lines if ln.startswith('#')]
+            rows = [ln.split() for ln in lines if not ln.startswith('#')]
+            assert len(rows) == grid.n_p * grid.n_t
+            assert out[side]['n_valid'] + out[side]['n_skipped'] == len(rows)
+            assert any('PALEOS_SHA' in h for h in head) and any('Fe' in h for h in head)
+            labels = {r[-1] for r in rows}
+            if side == 'liquid':
+                assert labels <= {'liquid', 'out-of-range'}
+            else:
+                assert all(lb.startswith('solid-') or lb == 'out-of-range' for lb in labels)
+        assert out['sha']
+
+    def test_zero_p_lo_raises_value_error(self, tmp_path):
+        grid = paleos_api.GridSpec(p_lo=0.0, p_hi=1e10, n_p=2, t_lo=1000.0, t_hi=2000.0, n_t=2)
+        with pytest.raises(ValueError, match='p_lo'):
+            paleos_api.generate_paleos_api_2phase_iron_tables(
+                tmp_path / 'a', tmp_path / 'b', grid
+            )

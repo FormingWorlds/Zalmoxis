@@ -5,7 +5,7 @@ How does Zalmoxis turn the adiabatic gradient of an equation of state (EOS) tabl
 In the temperature modes `adiabatic` and `adiabatic_from_cmb`, the temperature follows an adiabat: the temperature profile of material that is compressed without heat exchange, so that its entropy stays constant.
 `compute_adiabatic_temperature` in `zalmoxis.eos.temperature` integrates this adiabat from one node of the radial grid to the next.
 It uses the midpoint rule in $\ln P$ with substeps of at most 0.0025 in $\ln P$, and it holds the temperature constant below 1 bar.
-On the stored profiles of the default configuration and of the PROTEUS initial structure, the result lies within 0.54 K of an independent high-accuracy integration on macOS ([the values per profile](../Validation/thermal_state.md#adiabat-integration-on-real-profiles)); the test bound is 1 K.
+On the stored profiles of the default configuration and of the PROTEUS initial structure, the result lies within 0.254 K of an independent high-accuracy integration on macOS ([the values per profile](../Validation/thermal_state.md#adiabat-integration-on-real-profiles)); the test bound is 1 K.
 
 ## The equation
 
@@ -30,7 +30,7 @@ For a constant $\nabla_\mathrm{ad}$ the step is exact: $T = T_a (P / P_a)^{\nabl
 
 A worked example: the default configuration at a surface temperature of 2515 K has its centre at 407 GPa and its CMB at 141 GPa.
 One call takes about 6200 substeps and reads $\nabla_\mathrm{ad}$ about 12300 times.
-The real-profile test stores 4 starts of this configuration. Their planet masses differ only by $k \times 10^{-12}$ of the value ($k$ = 0 to 3), and their centre lies at 6238 to 6239 K.
+The real-profile test stores 4 starts of this configuration. Their planet masses differ only by $k \times 10^{-12}$ of the value ($k$ = 0 to 3), and their centre lies at 6163 to 6168 K.
 
 ## Accuracy on the PALEOS tables
 
@@ -38,8 +38,8 @@ PALEOS gives $\nabla_\mathrm{ad}$ by bilinear interpolation in $(\log_{10} P, \l
 This value is continuous, but its slope jumps at every grid line of the table.
 In the default core the adiabat also runs along the melting curve of the PALEOS iron table, its boundary between liquid and solid iron: on the 4 stored default profiles the integrated path switches between liquid and solid cells of the table 5 times from 226 to 252 GPa, and $\nabla_\mathrm{ad}$ changes steeply there.
 A substep that crosses such a kink or a steep step loses part of its second-order accuracy, so on the real tables the error does not fall exactly as $h^2$.
-It also does not fall with every smaller $h$: on the 6 stored profiles the largest error against the independent integration is 0.54 K at $h = 0.0025$, 1.46 K at 0.0055, 0.64 K at 0.0065 and 3.40 K at 0.007.
-The 1 K bound of the real-profile test is a measurement on these 6 profiles, with a margin of about 2 at the default $h$, not a bound for every profile.
+It also does not fall with every smaller $h$: on the 6 stored profiles the largest error against the independent integration is 0.254 K at $h = 0.0025$, 1.29 K at 0.0055, 1.25 K at 0.0065 and 2.34 K at 0.007.
+The 1 K bound of the real-profile test is a measurement on these 6 profiles, with a margin of about 4 at the default $h$, not a bound for every profile.
 The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with known solutions, and an error bound of 1 K on real profiles against an independent integration.
 
 ## Low pressure, padded tops, missing gradients and caps
@@ -48,6 +48,7 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 - **Padded top.** A node with $P = 0$ (a [padded accept](process_flow.md#padded-accepts)) counts as $10^5$ Pa, so a padded top gives the profile of a top at 1 bar.
 - **Missing gradient.** Where $\nabla_\mathrm{ad}$ is missing or not positive, $T$ is held for the rest of that segment; the next segment integrates again.
 - **Caps.** No node and no substep goes above $10^5$ K, the top of the PALEOS tables. With the CMB anchor, no node and no substep goes below 100 K either. A very large or infinite $\nabla_\mathrm{ad}$ therefore gives nodes at exactly $10^5$ K with the surface anchor, and nodes at exactly 100 K outward from the CMB anchor.
+- **A padded node with the CMB anchor.** In `adiabatic_from_cmb` a padded node takes its temperature from `_adiabat_to_surface` in `solver.py`, not from this routine: 64 midpoint steps from the last node with positive pressure to the target surface pressure, with no 1 bar floor. From 5 GPa and 3500 K on the `dummy` mantle it gives 0.113 K more than the segment rule at 1 atm and 0.457 K more at 1 Pa.
 
 ## How the density solve reads the temperature over the top cell
 
@@ -74,12 +75,72 @@ A straight line in $\log_{10} P$ over it lies 9 to 14 K off on the 2 PROTEUS pro
 
 **Where this is checked.** [Temperature lookup over the top cell](../Validation/thermal_state.md#temperature-lookup-over-the-top-cell).
 
+## Core boundaries inside a node segment
+
+What does the routine do when the inner-core boundary (ICB) or the core-mantle boundary (CMB) lies between 2 grid nodes?
+
+The routine walks away from the anchor: each node takes its temperature from its neighbour on the anchor side, by the integration over the node segment between the 2 nodes.
+When the ICB or the CMB lies inside a segment, the routine cuts the segment at the boundary and integrates each piece with the mixture of its own layer.
+The cut lies at the pressure of the boundary:
+
+- **CMB:** the pressure at the core mass, with $\ln P$ taken linear in the enclosed mass $m$ between the 2 nodes.
+- **ICB:** the pressure that the [inner-core boundary rule](mixing.md#the-inner-core-boundary) gives for the inner-core mass, with $P$ taken linear in $m^{2/3}$ between the core nodes on either side of it. When the ICB lies in the node segment of the CMB, the point of the CMB cut takes the place of the upper node ([the pressure at the inner-core boundary](mixing.md#the-pressure-at-the-inner-core-boundary)).
+
+So the cut and the ICB rule take one pressure for one inner-core mass.
+Other segments take the mixture of the node they fill.
+
+The cut matters where the gradients differ.
+At the ICB of a pure-iron core at 258 GPa and 5537 K (on the Anzellini curve), $\nabla_\mathrm{ad}$ of the default side tables is 0.22 on the solid side and 0.44 on the liquid side.
+Without the cut, the segment that holds the ICB would take one of the 2 values over its whole length, and the first inner-core node would miss the adiabat by up to 21 K.
+
+**Where this is checked.** [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre) for the CMB, and [The adiabat across the ICB](../Validation/hydrostatic_structure.md#the-adiabat-across-the-icb) for the ICB.
+
+## How the density solve reads the core temperature
+
+Which temperature does a core node read while the structure still changes from one outer pass to the next?
+
+An outer pass is one step of the outer loop ([Process flow](process_flow.md#iterative-solution)).
+In short: each pass reads a T(P) table built on the pass before.
+The table has a mantle part and a core part, split at the CMB of the pass that built it.
+A core point reads only the core part, so a mantle point never interpolates between a mantle and a core temperature.
+
+A node, or a point of the density integration, reads the core part when its enclosed mass lies below the core mass of the current pass, and the mantle part otherwise.
+This also holds when the CMB of the current pass lies at another pressure than that of the table, which happens on every pass whose structure still moves.
+When the core of the pass that built the table holds fewer than 2 nodes of positive pressure, or its mantle fewer than 2 nodes, the table is not split, and every point reads one table of all nodes.
+
+**Where this is checked.** [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre).
+
+### Pressures outside a part of the table
+
+- Past the high-pressure end of either part, $\log_{10} T$ continues linearly in $\log_{10} P$ with the slope of the end interval of that part, so the centre of a pass with a higher central pressure than the table takes a rising temperature, not the end value of the table.
+- Past the low-pressure end of the core part, it continues in the same way.
+- Past the low-pressure end of the mantle part, it holds the temperature of that end. At $P \le 0$ (a padded node) the solve takes the surface temperature, or the linear first guess below blend 1.
+- A table that is not split behaves as the mantle part at both ends.
+- Every lookup returns a temperature from 100 K to $10^5$ K, the maximum of the PALEOS tables.
+
+### Which table the strict test accepts
+
+A table built on a pass far from the planet mass puts its CMB at the wrong pressure.
+So the strict accept test (the result key `accepted_on` is `'strict'`) accepts a pass only when the pass that built its table met the mass tolerance of the solve ([Full-adiabat rule](process_flow.md#full-adiabat-rule) gives the tolerance and the other accept tests).
+
 ## Known limits of the integration
 
 - **Water below 1 bar.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
-- **Layer boundary inside the top cell.** The adiabat and the shell of the density table take one mixture over the whole top cell, so a layer boundary inside the cell is not resolved. The shell still ends at the temperature of the deeper node of the cell ([How the density solve reads the temperature over the top cell](#how-the-density-solve-reads-the-temperature-over-the-top-cell)).
-- **Core at the iron melting curve.** Where the core adiabat meets the melting curve of the PALEOS iron table, the integration follows the $\nabla_\mathrm{ad}$ column of the table into the solid branch, while a core at constant entropy would stay at the melting curve. On 4 solves of `input/default.toml` at 2515 K with the midpoint adiabat, the integrated centre is 671 to 678 K colder than the path at the constant table entropy of the core top. That path reads the entropy between table nodes 84 to 106 K apart in temperature near these core states, so the difference is known to about that spacing, not to 1 K. In the solid near 300 to 380 GPa the entropy column of the table also does not meet the Maxwell relation $(\partial s / \partial \ln P)_T = -\alpha P / \rho$, with $\alpha$ the thermal expansivity and $\rho$ the density; which column is wrong there is not established.
-- **Temperature of a padded node with the CMB anchor.** In `adiabatic_from_cmb` the solver does not take the temperature of a padded node from this routine. It uses `_adiabat_to_surface` in `solver.py`: 64 midpoint steps from the last node with positive pressure to the target surface pressure, with no 1 bar floor. Started at 5 GPa and 3500 K on the `dummy` mantle, it gives 0.113 K more than the segment rule at 1 atm and 0.457 K more at 1 Pa.
+- **Boundary of a third layer inside a node segment.** The boundary between the mantle and an ice layer is not cut ([its size](#the-uncut-boundary-of-an-ice-layer)).
+- **Layer boundary inside the top cell.** The adiabat and the shell of the density table take one mixture over the top cell, so a layer boundary inside it is not resolved; the shell still ends at the temperature of the deeper node ([How the density solve reads the temperature over the top cell](#how-the-density-solve-reads-the-temperature-over-the-top-cell)).
+- **Core at the iron melting curve.** Where the core adiabat meets the melting curve of the PALEOS iron table, the integration follows the $\nabla_\mathrm{ad}$ column into the solid branch, while a core at constant entropy would stay on the melting curve. For 4 solves of `input/default.toml` at 2515 K the integrated centre is 724 to 732 K colder than the path at the constant table entropy of the core top, known to about the 84 to 106 K spacing of the table nodes.
+
+### The uncut boundary of an ice layer
+
+The boundary between the mantle and an ice layer is not cut.
+Its node segment takes the mixture of the node it fills, so every node that the adiabat reaches after that segment misses the layering.
+A solve with an ice layer that integrates the adiabat itself logs a warning that names this limit.
+
+In the top cell, a cut also needs the shell of the density table to change mixture.
+With the nodes cut and the shell not cut, the shell misses the inner node of the cell by up to 3436 K (`PALEOS:H2O`, unpadded top).
+This value is a one-off measurement on the stored profiles of `tests/test_adiabat_real_profiles.py`; that test itself asserts only a miss above 1 K.
+
+[Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) gives the size of this limit on the stored profiles.
 
 ## Ranges and checks of the inputs
 

@@ -1,4 +1,4 @@
-"""Density of a liquid iron core that carries light elements.
+"""Density of an iron core that carries light elements.
 
 A core layer is a :class:`~zalmoxis.mixing.LayerMixture` of one iron base EOS
 (``PALEOS:iron``) and ``CoreAlloy:<element>`` components with their mass
@@ -34,7 +34,11 @@ outside that box ``dv_c`` is taken at the nearest point of the box (the iron bas
 true P, T), and the point is counted in :data:`LUO_OUT_OF_RANGE` with one warning per process.
 The wet cell has a carrier mass fraction of 0.0388 (0.43 wt% H); a core above it warns once per
 process. Core-mantle boundary temperatures of Earth-like planets, about 4000-6000 K, lie below
-the box, so there the carrier volume is its 8000 K value."""
+the box, so there the carrier volume is its 8000 K value.
+
+Both laws are calibrated on liquid iron. On the solid iron side of a two-layer core
+(``PALEOS-API-2phase:iron-solid``) the linear law applies that liquid calibration to solid
+iron, with one warning per process, and ``CoreAlloy:H-Luo`` is refused."""
 
 from __future__ import annotations
 
@@ -62,6 +66,7 @@ LINEAR_BETA = {
     'S': 7.0 / 13.85,
 }
 CARRIER = 'H-Luo'
+IRON_SIDES = ('PALEOS-API-2phase:iron-liquid', 'PALEOS-API-2phase:iron-solid')
 ALLOY_ELEMENTS = frozenset(LINEAR_BETA) | {CARRIER}
 
 # Luo, Dorn & Deng 2024, Methods Eq. 14: K [GPa], V0 [A^3 per cell], a, b, c [GPa]
@@ -95,6 +100,7 @@ LIN_FACTOR_MIN = 0.8
 LIQUIDUS_UNITS = {'S': (3, 1), 'O': (1, 1), 'C': (3, 1)}
 C_UNIT_SWITCH_PA = 255e9
 _COMPOUND_WARNED = [False]
+_SOLID_WARNED = [False]
 
 
 class CoreAlloyError(ValueError):
@@ -148,12 +154,26 @@ def split_alloy(mixture):
         w[el] = float(frac)
     if len(base) != 1:
         raise CoreAlloyError(f'a light-element core needs exactly one iron base, got {base!r}')
-    if base[0] != 'PALEOS:iron':
+    if base[0] != 'PALEOS:iron' and base[0] not in IRON_SIDES:
         raise CoreAlloyError(
-            f'a light-element core needs the PALEOS:iron base, got {base[0]!r}'
+            f'a light-element core needs the PALEOS:iron base or an iron side table, '
+            f'got {base[0]!r}'
         )
     if 'H' in w and CARRIER in w:
         raise CoreAlloyError('CoreAlloy:H and CoreAlloy:H-Luo exclude each other')
+    if base[0] == IRON_SIDES[1] and w:
+        if CARRIER in w:
+            raise CoreAlloyError(
+                f'CoreAlloy:{CARRIER} is refused on {IRON_SIDES[1]}: its carrier volume is that '
+                'of a liquid of iron and water (Luo et al. 2024)'
+            )
+        if not _SOLID_WARNED[0]:
+            _SOLID_WARNED[0] = True
+            logger.warning(
+                'the light-element laws are calibrated on liquid iron; on %s they apply that '
+                'calibration to solid iron',
+                IRON_SIDES[1],
+            )
     if sum(w.values()) >= 1.0:
         raise CoreAlloyError(f'light-element mass fractions sum to {sum(w.values())!r} >= 1')
     w_c, _ = _linear_factor(w)

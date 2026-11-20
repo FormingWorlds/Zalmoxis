@@ -8,6 +8,8 @@ must then equal m(r0), not the mass at the grid node below r0.
 
 from __future__ import annotations
 
+import types
+
 import numpy as np
 import pytest
 from hypothesis import given, settings
@@ -582,3 +584,108 @@ class TestJaxStopState:
         assert np.all(np.isfinite(ys)) and ys[-1, 2] > 0
         assert y_end == pytest.approx(ys[-1], rel=1e-12)
         assert y_end[0] == pytest.approx(_mass(R_OUT), rel=1e-6)
+
+
+def _stall_first_solve(monkeypatch, node):
+    """Make the first solve_ivp call (from r = 0) end with status -1 after ``node``, as an
+    RK45 stall does: the state on the nodes up to ``node`` and no event."""
+    inner = sm.solve_ivp
+
+    def solve_ivp(fun, t_span, *args, **kwargs):
+        if t_span[0] != 0.0:
+            return inner(fun, t_span, *args, **kwargs)
+        t_eval = kwargs.pop('t_eval')[: node + 1]
+        sol = inner(fun, (t_span[0], t_eval[-1]), *args, t_eval=t_eval, **kwargs)
+        sol.status, sol.y_events = -1, [np.empty((0, 3))]
+        return sol
+
+    monkeypatch.setattr(sm, 'solve_ivp', solve_ivp)
+
+
+class TestStallInsideThePlanet:
+    """A step stall (status -1) with a finite RHS, after which the re-integration passes its
+    shell with P above the surface fraction: the integration goes on from that node."""
+
+    @pytest.mark.parametrize('tdep', [False, True])
+    def test_a_stall_goes_on_to_the_surface_stop(self, monkeypatch, tdep):
+        radii, r0, p_c = _setup(0.6)
+        _stall_first_solve(monkeypatch, 10)
+        m, g, p = _solve_numpy(monkeypatch, radii, p_c, 'zero', tdep)
+        i_stop = N - 1
+        assert np.all(np.isfinite(m)) and np.all(np.isfinite(p))
+        assert np.all(p[i_stop:] == 0.0) and np.all(p[:i_stop] > 0.0)
+        assert m[i_stop:] == pytest.approx(np.full(N - i_stop, _mass(r0)), rel=1e-6)
+        assert m[1:i_stop] == pytest.approx(_mass(radii[1:i_stop]), rel=1e-6)
+
+    def test_a_tail_with_a_non_finite_rhs_on_the_way_still_fails(self, monkeypatch):
+        """The re-integration of the stalled shell reaches its end, but one RHS on the way is
+        not finite (RK45 steps around it): no continuation, the solve fails from that node."""
+        radii, r0, p_c = _setup(0.6)
+        _stall_first_solve(monkeypatch, 10)
+        stalled, rhs, state = sm.solve_ivp, _rhs('zero'), {'tail': False, 'calls': 0}
+
+        def coupled(*args, **kwargs):
+            state['calls'] += state['tail']
+            return (
+                np.full(3, np.nan)
+                if state['tail'] and state['calls'] == 2
+                else rhs(*args, **kwargs)
+            )
+
+        def solve_ivp(fun, t_span, *args, **kwargs):
+            state['tail'] = tuple(t_span) == (radii[10], radii[11])
+            try:
+                return stalled(fun, t_span, *args, **kwargs)
+            finally:
+                state['tail'] = False
+
+        monkeypatch.setattr(sm, 'solve_ivp', solve_ivp)
+        monkeypatch.setattr(sm, 'coupled_odes', coupled)
+        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: False)
+        m, g, p = sm.solve_structure(
+            {}, 0.0, 0.0, radii, 0.5, 1e-10, 1e-12, np.inf, {}, {}, [0.0, 0.0, p_c], None, None
+        )
+        assert state['calls'] > 2  # the tail went on past its non-finite RHS
+        assert np.all(np.isfinite(p[:11])) and np.all(np.isnan(p[11:]))
+
+    def test_a_tail_that_ends_at_the_surface_pressure_is_the_surface_stop(self, monkeypatch):
+        """The stalled shell ends 1e-5 of a shell below the surface, at a pressure below
+        SURFACE_STOP_P_FRACTION of P_c: that node is the surface stop, padded with P = 0."""
+        radii, r0, p_c = _setup(1e-5)
+        _stall_first_solve(monkeypatch, N - 3)
+        m, g, p = _solve_numpy(monkeypatch, radii, p_c, 'zero', False)
+        assert p[N - 3] > 0.0 and np.all(p[N - 2 :] == 0.0)
+
+    def test_a_continuation_that_saves_no_node_moves_on(self, monkeypatch):
+        """Each continuation after a passed shell saves no node: the solve takes the end state
+        of each re-integrated shell and still reaches the surface stop."""
+        radii, r0, p_c = _setup(0.6)
+        _stall_first_solve(monkeypatch, 10)
+        stalled, calls = sm.solve_ivp, [0]
+
+        def solve_ivp(fun, t_span, *args, **kwargs):
+            if t_span[0] > 0 and 't_eval' in kwargs:  # a continuation from a passed shell
+                calls[0] += 1
+                assert calls[0] < 100, 'the solve does not move on'
+                return types.SimpleNamespace(
+                    status=-1, y=np.empty((3, 0)), y_events=[np.empty((0, 3))]
+                )
+            return stalled(fun, t_span, *args, **kwargs)
+
+        monkeypatch.setattr(sm, 'solve_ivp', solve_ivp)
+        m, g, p = _solve_numpy(monkeypatch, radii, p_c, 'zero', False)
+        assert calls[0] > 1 and np.all(np.isfinite(m)) and p[-1] == 0.0
+        assert m[-1] == pytest.approx(_mass(r0), rel=1e-6)
+
+    def test_a_stall_before_a_nan_band_still_fails(self, monkeypatch):
+        """The continued integration meets a non-finite RHS further out: the solve fails."""
+        radii = np.linspace(0.0, R_OUT, N)
+        p_c = 1e12  # no surface inside R
+        band = _band_rhs(radii[30], radii[32])
+        _stall_first_solve(monkeypatch, 10)
+        monkeypatch.setattr(sm, 'coupled_odes', band)
+        monkeypatch.setattr(sm, 'any_component_is_tdep', lambda _: False)
+        m, g, p = sm.solve_structure(
+            {}, 0.0, 0.0, radii, 0.5, 1e-10, 1e-12, np.inf, {}, {}, [0.0, 0.0, p_c], None, None
+        )
+        assert np.all(np.isfinite(p[:30])) and np.all(np.isnan(p[30:]))  # band from radii[30]

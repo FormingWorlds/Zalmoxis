@@ -11,6 +11,7 @@ planet_mass                = 1 			# Planet mass (M_earth); validated range: 0.1-
 [AssumptionsAndInitialGuesses]
 core_mass_fraction         = 0.325 				# Core mass fraction (Earth: ~0.325); validated range: 0.01-0.999
 mantle_mass_fraction       = 0 					# Mantle mass fraction (0 = fills remainder; >0 for 3-layer models with ice)
+# inner_core_mass_fraction = 0.05 				# Inner-core mass over core mass, in [0, 1]; needs inner_core
 temperature_mode           = "adiabatic" 		# Temperature profile: "isothermal", "linear", "prescribed", "adiabatic"
 surface_temperature        = 3000 				# Surface temperature (K); validated range: 300-5000
 center_temperature         = 6000 				# Center temperature (K); used by linear and adiabatic (initial guess) modes
@@ -43,6 +44,11 @@ temperature_profile_file   = "temp_profile.txt" # Prescribed T(r) file (center t
 core                       = "PALEOS:iron"
 mantle                     = "PALEOS:MgSiO3"
 ice_layer                  = "" 		# Empty = 2-layer model; set to an EOS string for 3-layer model
+# Two-layer core: core = outer core on "PALEOS-API-2phase:iron-liquid" (with CoreAlloy fractions),
+# inner_core on "PALEOS-API-2phase:iron-solid"; the boundary from core_liquidus (an iron melting
+# curve, "Anzellini13-iron" or "Sinmyo19-iron") or inner_core_mass_fraction, exactly one.
+inner_core                 = "" 		# Empty = one-layer core
+core_liquidus              = "" 		# Empty = no liquidus rule
 
 # Phase-aware mixing: smooth density suppression for multi-material layers.
 # Components with density below the sigmoid center are progressively excluded

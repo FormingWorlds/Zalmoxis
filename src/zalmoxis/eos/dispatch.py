@@ -27,7 +27,7 @@ def _is_paleos_api(mat: dict) -> bool:
     cache module pulls in ``paleos_api`` which pulls in PALEOS; paying that
     import cost on every non-PALEOS-API density query would be wasteful.
     """
-    if mat.get('format') in ('paleos_api', 'paleos_api_2phase'):
+    if mat.get('format') in ('paleos_api', 'paleos_api_2phase', 'paleos_api_2phase_side'):
         return True
     for sub_key in ('solid_mantle', 'melted_mantle'):
         sub = mat.get(sub_key)

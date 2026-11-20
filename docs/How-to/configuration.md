@@ -32,6 +32,7 @@ Initial guesses and assumptions for the planetary structure.
 | `surface_temperature` | float | K | 300 to 5000 | Surface temperature. Used when `temperature_mode` is `"isothermal"`, `"linear"` or `"adiabatic"`, and in `"adiabatic_from_cmb"` as the temperature of the core nodes. Validated across 300-5000 K for all compositions. Values above 5000 K produce a warning. The config check refuses a value that is not a positive, finite number (a TOML `true` included) in every mode, and a value above 100000 K in the modes `"adiabatic"` and `"adiabatic_from_cmb"`. |
 | `center_temperature` | float | K | -- | Central temperature. Used when `temperature_mode` is `"linear"` or `"adiabatic"` (initial guess). The adiabat solver determines the actual center temperature self-consistently. |
 | `temperature_profile_file` | string | -- | -- | Filename (relative to `input/`) containing a prescribed radial temperature profile. Used when `temperature_mode` is `"prescribed"`. |
+| `inner_core_mass_fraction` | float | -- | 0 to 1 | Inner-core mass over core mass of a two-layer core (`inner_core` set). Exclusive with `core_liquidus`: a two-layer core takes exactly one of the 2, a one-layer core neither. A value that is not a number in $[0, 1]$ is refused. Unset by default. See [two-layer core](../Explanations/mixing.md#two-layer-core). |
 
 #### Temperature profiles
 
@@ -63,6 +64,8 @@ ice_layer = ""  # Empty string = 2-layer model
 | `core` | Yes | EOS for the innermost layer (iron core). |
 | `mantle` | Yes | EOS for the mantle layer. |
 | `ice_layer` | No | EOS for an outer volatile layer. If empty or omitted, the model uses a 2-layer structure (core + mantle). If set, the model uses a 3-layer structure and `mantle_mass_fraction` must be > 0 in `[AssumptionsAndInitialGuesses]`. |
+| `inner_core` | No | EOS of the inner core of a two-layer core, on `PALEOS-API-2phase:iron-solid` with optional `CoreAlloy` components. If set, `core` is the outer core, with `PALEOS-API-2phase:iron-liquid` as its only iron base, in any order of the components. A liquid side in a core without an inner core, a layer on the wrong side or a component other than the iron side and `CoreAlloy` elements is refused with a `ValueError`, from the TOML loader, `validate_config` and `main`. On the solid side, `CoreAlloy` elements give one warning per process, and `CoreAlloy:H-Luo` is refused ([limits](../Explanations/mixing.md#limits)). The JAX structure path refuses an `inner_core` layer; a two-layer core is solved on the numpy path. Empty by default: a one-layer core. See [two-layer core](../Explanations/mixing.md#two-layer-core). |
+| `core_liquidus` | No | Iron melting curve that sets the inner-core boundary of a two-layer core where the liquid of the outer core reaches it (on an adiabat, the outer-core adiabat continued below the ICB with the liquid side; on a given profile, the profile): `"Anzellini13-iron"` or `"Sinmyo19-iron"`. A caller can set a callable `T_liq(P)` \[K\] instead. Exclusive with `inner_core_mass_fraction`; needs `outer_solver = "picard"`, the Zalmoxis default (PROTEUS defaults to newton). A Newton probe solves 1 outer pass, with no profile of a previous pass, so `outer_solver = "newton"` is refused, also when a caller skips `validate_config`; a Newton solve takes `inner_core_mass_fraction` only. `temperature_mode = "adiabatic_from_cmb"` is refused too: it carries the surface temperature through the core, so the liquidus rule would read the surface temperature as the core temperature. `main` accepts it when a caller passes a [core temperature table](../Explanations/proteus_coupling.md#core-temperature-from-the-caller), since the table then sets the core temperature; `validate_config` does not see the table and refuses it. A named curve with `CoreAlloy` elements in the outer core gives a warning ([composition](../Explanations/mixing.md#composition)). A temperature or a liquidus that is not finite on a core node is refused with a `ValueError`. Empty by default. |
 
 #### Naming convention
 
@@ -110,6 +113,8 @@ Rules:
 | `PALEOS:iron` | PALEOS (Zenodo 22776069, v1.3.0) | Fe (5 phases) | T-dependent | Yes | Unified single-file table with all stable Fe phases (alpha-bcc, delta-bcc, gamma-fcc, epsilon-hcp, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Enables T-dependent core with its own adiabat. |
 | `PALEOS:MgSiO3` | PALEOS (Zenodo 22776069, v1.3.0) | MgSiO3 (6 phases) | T-dependent | Yes | Unified single-file table with all stable MgSiO3 phases (3 pyroxene, bridgmanite, postperovskite, liquid). P: 1 bar to 100 TPa, T: 300 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. |
 | `PALEOS:H2O` | PALEOS (Zenodo 22776069, v1.3.0) | H2O (7 EOS) | T-dependent | Yes | Unified single-file table with all stable H2O phases (ice Ih to X, liquid, vapor, superionic). P: 1 bar to 100 TPa, T: 100 to 100000 K. Phase boundary encoded in table. **Limited to $\leq 50\,M_\oplus$**. Use as `ice_layer` for 3-layer models. |
+| `PALEOS-API-2phase:iron-solid` | PALEOS, made on first use from the installed package | Fe (solid phases) | T-dependent | No (needs the PALEOS package) | Solid iron of the PALEOS phase diagram on every node, the metastable solid above melting. P: 1 bar to 100 TPa, T: 300 to 100000 K, 150 points per decade, one pair per PALEOS version and build key, each side read as a unified table. The base of the inner core of a two-layer core. No value where the solid iron of PALEOS does not converge: on the default grid above about 2830 K below 0.1 GPa, 2960 K at 1 GPa, 3400 K at 5 GPa, 5310 K at 10 GPa and 6790 K at 20 GPa. A core node outside the box of its side table, or where the table has no finite value, fails the accepted solve (`core_table_box`); an inner core of a small, hot planet can lie there. |
+| `PALEOS-API-2phase:iron-liquid` | PALEOS, made on first use from the installed package | Fe (liquid, Luo et al. (2024)[^cite-luo2024]) | T-dependent | No (needs the PALEOS package) | PALEOS liquid iron on every node, the metastable liquid below melting. Same box and grid as the solid side. The base of the outer core of a two-layer core; a core on it needs an `inner_core`. |
 | `Chabrier:H` | Chabrier et al. (2019)[^cite-chabrier2019], Chabrier & Debras (2021)[^cite-chabrier2021] | Pure H$_2$ (molecular, atomic, ionized) | T-dependent | Yes | DirEOS2021 table for pure hydrogen. Grid: 121 $\times$ 441 ($\log T$, $\log P$), $T = 100$ to $10^8$ K, $P = 1$ Pa to $10^{22}$ Pa. Provides $\rho$, $\nabla_{\mathrm{ad}}$, $c_p$, $c_v$, $\alpha$, and phase identifier. Loaded through the same `paleos_unified` reader. Use as a mixing component in the mantle (e.g., `"PALEOS:MgSiO3:0.97+Chabrier:H:0.03"`) for sub-Neptune interiors. **No standalone mass limit** (pressure range far exceeds any planet). In H$_2$ dissociation zones ($T \sim 3000$ to $30000$ K), $\nabla_{\mathrm{ad}}$ is clamped at 0.100 in the source tables. |
 | `Analytic:iron` | Seager et al. (2007)[^cite-seager2007] Table 3 | Fe (epsilon) | Fixed 300 K | No | Modified polytrope: $\rho(P) = \rho_0 + c \cdot P^n$. |
 | `Analytic:MgSiO3` | Seager et al. (2007)[^cite-seager2007] Table 3 | MgSiO3 perovskite | Fixed 300 K | No | Modified polytrope. |
@@ -363,6 +368,15 @@ ice_layer = ""
 ```
 Both `core` and `mantle` must be set even for a single-composition model. The mantle EOS is still evaluated but occupies zero mass.
 
+**11. Two-layer core** (solid iron inner core, liquid Fe-S outer core, ICB on the Anzellini melting curve):
+```toml
+[EOS]
+core          = "PALEOS-API-2phase:iron-liquid:0.8615+CoreAlloy:S:0.1385"
+inner_core    = "PALEOS-API-2phase:iron-solid"
+core_liquidus = "Anzellini13-iron"
+```
+See [two-layer core](../Explanations/mixing.md#two-layer-core) for the physics and the [tutorial](../Tutorials/two_layer_core.md) for a run.
+
 #### Validated parameter ranges
 
 The solver has been systematically tested across 293 configurations spanning 9 test suites. The table below summarizes the validated ranges where convergence is reliable:
@@ -444,15 +458,15 @@ Controls the three nested iteration loops (outer mass convergence, inner density
 
 | Parameter | Type | Unit | Default | Description |
 |---|---|---|---|---|
-| `max_iterations_outer` | int | -- | 100 | Maximum iterations for the outer loop (total mass convergence). |
-| `tolerance_outer` | float | -- | 3e-3 | Relative tolerance for outer loop convergence ($\lvert M_\mathrm{calc} - M_\mathrm{target} \rvert / M_\mathrm{target}$). |
-| `max_iterations_inner` | int | -- | 100 | Maximum iterations for the inner loop (density profile convergence). |
+| `max_iterations_outer` | int | -- | 50 | Maximum iterations for the outer loop (total mass convergence). |
+| `tolerance_outer` | float | -- | 1e-3 | Relative tolerance for outer loop convergence ($\lvert M_\mathrm{calc} - M_\mathrm{target} \rvert / M_\mathrm{target}$). |
+| `max_iterations_inner` | int | -- | 50 | Maximum iterations for the inner loop (density profile convergence). |
 | `tolerance_inner` | float | -- | 1e-4 | Relative tolerance for inner loop density convergence. |
 | `relative_tolerance` | float | -- | 1e-5 | Relative tolerance for `solve_ivp` (ODE integrator). |
 | `absolute_tolerance` | float | -- | 1e-6 | Absolute tolerance for `solve_ivp`. |
-| `maximum_step` | float | m | 250000 | Maximum radial step size for `solve_ivp`. |
+| `maximum_step` | float | m | $0.004\,R_\mathrm{est}$ | Maximum radial step size for `solve_ivp`. The default scales with the planet mass: $R_\mathrm{est} = 6335.439\,\mathrm{km}\,(M/M_\oplus)^{0.282}$, so the step is 25.3 km at 1 $M_\oplus$. |
 | `adaptive_radial_fraction` | float | -- | 0.98 | Fraction (0 to 1) of the radial domain where `solve_ivp` uses adaptive stepping before switching to fixed steps. Active for all T-dependent EOS. |
-| `max_center_pressure_guess` | float | Pa | 10e12 | Upper bound on the Brent solver's pressure bracket ($P_{\mathrm{high}}$). This caps the *central* pressure (at the center of the iron core, which uses the Seager2007 EOS valid to $10^{16}$ Pa), not the mantle pressure directly. The default of 10 TPa is intentionally higher than the WolfBower2018 table ceiling (~1 TPa) because it limits the core center, not the mantle. However, higher central pressures produce higher mantle pressures at the CMB, so capping $P_c$ indirectly prevents deep-mantle pressures from exceeding the WB2018 table by too much. Only active when `WolfBower2018:MgSiO3` is used; not needed for pure-Seager runs. |
+| `max_center_pressure_guess` | float | Pa | $10\,P_\mathrm{c,est}$ | Upper bound on the Brent solver's pressure bracket ($P_{\mathrm{high}}$). This caps the *central* pressure (at the center of the iron core, which uses the Seager2007 EOS valid to $10^{16}$ Pa), not the mantle pressure directly. The default scales with the planet mass, $P_\mathrm{c,est} = 365\,\mathrm{GPa}\,(M/M_\oplus)^{0.87}$: 3.65 TPa at 1 $M_\oplus$, above the WolfBower2018 table ceiling (~1 TPa), because it limits the core center, not the mantle. However, higher central pressures produce higher mantle pressures at the CMB, so capping $P_c$ indirectly prevents deep-mantle pressures from exceeding the WB2018 table by too much. Only active when `WolfBower2018:MgSiO3` is used; not needed for pure-Seager runs. |
 
 #### Guidance on reasonable parameter ranges
 
@@ -460,7 +474,7 @@ The default values work well for Earth-mass planets with the default EOS. For ot
 
 - **Super-Earths (1 to 10 $M_\oplus$):** The defaults generally suffice. For masses above ~5 $M_\oplus$, consider tightening `tolerance_outer` to 1e-4 and increasing `num_layers` to 200 to 300. The Brent pressure solver converges in 20 to 36 evaluations regardless of planet mass.
 - **Sub-Earths (< 1 $M_\oplus$):** May converge faster. Defaults are conservative.
-- **Temperature-dependent EOS (`WolfBower2018:MgSiO3`):** Limited to $\leq 7\,M_\oplus$. If convergence is slow, try reducing `maximum_step` (e.g., to 100000 m) and ensuring `adaptive_radial_fraction` is close to 1.0 (e.g., 0.98 to 0.99). The `max_center_pressure_guess` caps the Brent solver's upper bracket to prevent deep-mantle pressures from exceeding the WolfBower2018 table by too much. The default (10 TPa) is sufficient for planets up to 7 $M_\oplus$.
+- **Temperature-dependent EOS (`WolfBower2018:MgSiO3`):** Limited to $\leq 7\,M_\oplus$. If convergence is slow, try a smaller `maximum_step` than its default (25.3 km at 1 $M_\oplus$) and ensuring `adaptive_radial_fraction` is close to 1.0 (e.g., 0.98 to 0.99). The `max_center_pressure_guess` caps the Brent solver's upper bracket to prevent deep-mantle pressures from exceeding the WolfBower2018 table by too much. The default (19.8 TPa at 7 $M_\oplus$) is sufficient for planets up to 7 $M_\oplus$.
 - **Extended T-dependent EOS (`RTPress100TPa:MgSiO3`):** Limited to $\leq 50\,M_\oplus$. The melt table extends to 100 TPa so `max_center_pressure_guess` capping is not applied. For very massive planets (>10 $M_\oplus$), consider increasing `num_layers` to 200 to 300 and tightening `tolerance_outer`.
 - **Analytic EOS:** Convergence is typically fast and robust. Looser tolerances and fewer layers are usually sufficient for exploration.
 - **3-layer models:** Adding an ice layer increases the number of density discontinuities. Consider increasing `num_layers` to 200+ for smooth profiles.
@@ -507,3 +521,4 @@ Convergence diagnostics are controlled by the Python logging level. Set `logging
 [^cite-monteux2016]: J. Monteux, D. Andrault, H. Samuel, *[On the cooling of a deep terrestrial magma ocean](https://doi.org/10.1016/j.epsl.2016.05.010)*, Earth and Planetary Science Letters, 448, 140-149, 2016. [SciX](https://scixplorer.org/abs/2016E%26PSL.448..140M/abstract).
 [^cite-belonoshko2005]: A. B. Belonoshko, N. V. Skorodumova, A. Rosengren, R. Ahuja, B. Johansson, L. Burakovsky, D. L. Preston, *[High-pressure melting of MgSiO$_3$](https://doi.org/10.1103/PhysRevLett.94.195701)*, Physical Review Letters, 94(19), 195701, 2005. [SciX](https://scixplorer.org/abs/2005PhRvL..94s5701B/abstract).
 [^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).
+[^cite-luo2024]: H. Luo, C. Dorn, J. Deng, *[The interior as the dominant water reservoir in super-Earths and sub-Neptunes](https://doi.org/10.1038/s41550-024-02347-z)*, Nature Astronomy, 8, 1399-1407, 2024. [SciX](https://scixplorer.org/abs/2024NatAs...8.1399L/abstract).

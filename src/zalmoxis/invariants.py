@@ -23,6 +23,10 @@ TOLERANCES = {
     'core_mantle_node': 0,
     'gravity': 100.0,
     'density_eos': 1e-6,
+    'core_cmb_node': 1e-10,
+    'core_table_box': 0,
+    'core_density_eos': 1e-6,
+    'core_element_mass': 1e-10,
 }
 _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 _RTOL_GAUSS = 1e-12  # padded gravity against G m_stop / r^2, both computed in floats
@@ -39,14 +43,23 @@ class StructureInvariantError(Exception):
     """
 
 
-def _layer(m, cmb_mass, core_mantle_mass, ice):
+def _layer(m, cmb_mass, core_mantle_mass, ice, icb_mass=0.0):
     """Layer name of each node with enclosed mass ``m``, by the rule of the solver."""
     top = np.where(ice & (m >= core_mantle_mass * (1.0 - _RTOL_LAYER)), 'ice_layer', 'mantle')
-    return np.where(m < cmb_mass * (1.0 - _RTOL_LAYER), 'core', top)
+    core = np.where(m < icb_mass * (1.0 - _RTOL_LAYER), 'inner_core', 'core')
+    return np.where(m < cmb_mass * (1.0 - _RTOL_LAYER), core, top)
 
 
 def deviations(
-    result, config_params, mass_limit, rtol, atol, density_at=None, ice=False, details=None
+    result,
+    config_params,
+    mass_limit,
+    rtol,
+    atol,
+    density_at=None,
+    ice=False,
+    details=None,
+    box_at=None,
 ):
     """Return the deviation of each invariant of an accepted result.
 
@@ -89,6 +102,14 @@ def deviations(
         when ``density_at`` is None or when ``result['density_from_eos']`` is False.
     ice : bool
         True when the planet has an ice layer.
+    box_at : callable or None
+        ``(P, T, layer) -> bool array`` of the core nodes of one layer that its EOS table clamps
+        or cannot read; with ``result['core']`` (the core arrays of
+        :func:`zalmoxis.core_profile.core_arrays`) ``core_table_box`` counts them and
+        ``core_cmb_node`` is the relative difference of the last core-array mass from
+        ``cmb_mass``. The layer of a node takes the inner core below ``result['core']['M_ic']``.
+        With ``density_at``, ``core_density_eos`` compares each core-array density with the
+        EOS of its layer, the inner core where ``phase`` is 1.
     details : dict or None
         If given, filled with {invariant: text} naming the values that enter the deviation and
         their expected values, for the error message, and with ``'density_eos cause'``: the
@@ -218,12 +239,39 @@ def deviations(
         mass_limit,
         text=f'mass_enclosed[-1] {m[-1]:.6e} kg, target {M:.6e} kg',
     )
+    core = result.get('core')
+    icb = core['M_ic'] if core else 0.0
+    if core:
+        put(
+            'core_cmb_node',
+            abs(core['m'][-1] / result['cmb_mass'] - 1.0),
+            len(core['m']) - 1,
+            text=f'core array mass {core["m"][-1]:.6e} kg, cmb_mass {result["cmb_mass"]:.6e} kg',
+        )
+        put(
+            'core_element_mass',
+            _element_mass_deviation(core, result['cmb_mass']),
+            len(core['m']) - 1,
+            text='light-element masses of the core arrays against M_ic w_ic + M_oc w_oc',
+        )
+    names = np.where(core['phase'] == 1, 'inner_core', 'core') if core else None
+    if core and box_at is not None:
+        bad = np.zeros(len(names), bool)
+        for name in np.unique(names):
+            sel = names == name
+            bad[sel] = box_at(core['P'][sel], core['T'][sel], str(name))
+        put(
+            'core_table_box',
+            bad.sum(),
+            int(np.argmax(bad)),
+            text='core nodes outside the table',
+        )
     if density_at is not None and result.get('density_from_eos'):
         n = len(P)
         lookup = P.copy()
         if k < n:  # a padded node is the surface, at the target surface pressure
             lookup[k:] = config_params['target_surface_pressure']
-        layer = _layer(m, result['cmb_mass'], result['core_mantle_mass'], ice)
+        layer = _layer(m, result['cmb_mass'], result['core_mantle_mass'], ice, icb)
         ref = np.full(n, np.nan)
         for name in np.unique(layer):
             sel = layer == name
@@ -247,7 +295,47 @@ def deviations(
             i,
             text=f'density {rho[i]:.6e}, expected {ref[i]:.6e} ({layer[i]} EOS)',
         )
+    if core and density_at is not None and result.get('density_from_eos'):
+        ref = np.full(len(names), np.nan)
+        for name in np.unique(names):
+            sel = names == name
+            ref[sel] = np.asarray(density_at(core['P'][sel], core['T'][sel], str(name)), float)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            d = np.abs(np.asarray(core['rho'], float) / ref - 1)
+        d[~np.isfinite(d)] = np.inf
+        i = int(np.argmax(d))
+        put(
+            'core_density_eos',
+            d.max(initial=0.0),
+            i,
+            text=f'core array density {core["rho"][i]:.6e}, expected {ref[i]:.6e} ({names[i]} EOS)',
+        )
     return out
+
+
+def _element_mass_deviation(core, cmb_mass):
+    """Largest error, over cmb_mass times the largest fraction, of the light-element masses of
+    the core arrays: the trapezoid of each ``w_<el>`` over ``m``, exact across the step at
+    ``M_ic``, against ``M_ic w_ic + (m_end - M_ic) w_oc`` with the layer compositions
+    ``w_layers``."""
+    m, m_ic, layers = np.asarray(core['m'], float), core['M_ic'], core.get('w_layers', {})
+    columns = {k[2:] for k in core if k.startswith('w_') and k != 'w_layers'}
+    dev = 0.0
+    for el in columns | set().union(*layers.values()):
+        if el not in columns:
+            return np.inf
+        w = np.asarray(core[f'w_{el}'], float)
+        w_ic, w_oc = (layers.get(k, {}).get(el, 0.0) for k in ('inner_core', 'core'))
+        got = float(np.sum(0.5 * (w[1:] + w[:-1]) * np.diff(m)))
+        step = m_ic * (1.0 - _RTOL_LAYER)  # where the layer rule changes from inner to outer
+        for j in np.flatnonzero((m[:-1] < step) & (m[1:] >= step)):  # the step inside a segment
+            exact = w_ic * (step - m[j]) + w_oc * (m[j + 1] - step)
+            got += exact - 0.5 * (w[j] + w[j + 1]) * (m[j + 1] - m[j])
+        want = m_ic * w_ic + (m[-1] - m_ic) * w_oc
+        scale = cmb_mass * max(w_ic, w_oc, float(np.abs(w).max()))
+        ratio = abs(got - want) / scale if scale > 0 else abs(got - want)
+        dev = max(dev, ratio if np.isfinite(ratio) else np.inf)
+    return dev
 
 
 def _finite_positive(x):
@@ -268,7 +356,7 @@ def _real_scalar(x):
     return True
 
 
-def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False):
+def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False, box_at=None):
     """Raise StructureInvariantError when an accepted result breaks an invariant.
 
     See ``deviations`` for the parameters; the mass limit is ``result['accept_mass_limit']``,
@@ -288,6 +376,8 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
         return
     accepted_on = result.get('accepted_on')
     missing = [k for k in _ARRAYS + _MASSES if result.get(k) is None]
+    if 'core' in result and result['core'] is None:
+        missing.append('core arrays')
     if missing:
         raise StructureInvariantError(
             f'Accepted structure ({accepted_on=}) has no {", ".join(missing)}.'
@@ -318,7 +408,7 @@ def check_accepted(result, config_params, rtol, atol, density_at=None, ice=False
         )
     details = {}
     for name, (dev, i, tol) in deviations(
-        result, config_params, limit, rtol, atol, density_at, ice, details
+        result, config_params, limit, rtol, atol, density_at, ice, details, box_at
     ).items():
         if not dev <= tol:
             node = '' if name in _SCALAR or i < 0 else f' at node {i}'

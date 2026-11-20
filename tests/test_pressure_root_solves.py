@@ -142,8 +142,15 @@ NEWTON_SETUPS = (
     ('paleos_10_numpy', PALEOS, 10.0, False, 5600.0, 8200),
 )
 # P(R) near the stop scatters on the JAX path and in the Picard blend ramp that seeds from a
-# numpy PALEOS Newton root; a padded accept is possible there.
-MAY_PAD = {'paleos_1_jax', 'paleos_1_numpy', 'paleos_5_numpy', 'paleos_10_numpy'}
+# numpy PALEOS Newton root; paleos_3_jax reaches R at planet mass x (1 + k 1e-12), k = 0 to 4,
+# on macOS arm64 and pads at k = 0 on the Linux runner.
+MAY_PAD = {
+    'paleos_1_jax',
+    'paleos_1_numpy',
+    'paleos_3_jax',
+    'paleos_5_numpy',
+    'paleos_10_numpy',
+}
 
 
 @pytest.mark.accept_solves_newton_setups
@@ -161,8 +168,8 @@ def test_every_newton_setup_meets_the_surface_boundary_condition(
     its first sign pair within the cap, and a reached profile misses P_t by at most 1 P_t.
     A JAX setup takes T(r) from a numpy Picard solve at rtol 1e-5, as PROTEUS hands it the
     interior profile.
-    Without ``_refine_pressure_root`` the Analytic 1 and PALEOS 3 JAX setups end padded,
-    so those 2 cases fail. See ``docs/Validation/hydrostatic_structure.md``."""
+    Without ``_refine_pressure_root`` the Analytic 1 setup ends padded, so that case fails.
+    See ``docs/Validation/hydrostatic_structure.md``."""
     if not _has_paleos_data():
         pytest.skip('PALEOS tables not on disk')
     calls, real = [], zs._refine_pressure_root

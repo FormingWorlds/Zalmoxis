@@ -60,13 +60,54 @@ def _keyword(job):
 
 def _jobs(workflow):
     """(select, test files named in the job) of each nightly suite; the entries that split one
-    select by ``-k`` count once (``_newton_faults`` checks that they split it)."""
+    select by ``-k`` or by ``split`` count once (``_newton_faults`` and ``_split_faults``
+    check that they split it)."""
     jobs = []
     for job in _suites(workflow).values():
         entry = _entry(job)
-        if _keyword(job) is None or entry not in jobs:
+        if (_keyword(job) is None and _split(job) is None) or entry not in jobs:
             jobs.append(entry)
     return jobs
+
+
+def _split(job):
+    """The ``split`` field of one matrix entry (``deselect`` or ``only``: the job runs its select
+    without or with only the test id ``CORE_SPLIT`` of the workflow env), or None."""
+    split = re.search(r'^\s*split:\s*(\S+)', job, re.M)
+    return split.group(1) if split else None
+
+
+def _split_faults(workflow):
+    """Selects split by ``CORE_SPLIT`` whose entries are not exactly one ``deselect`` and one
+    ``only`` job, and a split without ``CORE_SPLIT`` in the workflow env."""
+    groups = {}
+    for job in _suites(workflow).values():
+        if _split(job) is not None:
+            sel, files = _entry(job)
+            groups.setdefault((sel, tuple(files)), []).append(_split(job))
+    faults = [
+        (sel, sorted(s)) for (sel, _), s in groups.items() if sorted(s) != ['deselect', 'only']
+    ]
+    if groups and not re.search(
+        r'^env:\n(\s+#.*\n)*\s+CORE_SPLIT: tests/\S+::\w+$', workflow, re.M
+    ):
+        faults.append(('CORE_SPLIT', None))
+    return faults
+
+
+@pytest.mark.unit
+def test_a_split_select_runs_in_one_deselect_and_one_only_job():
+    """The core tier is split over 2 jobs by one test id: the select of a split comes in exactly
+    one job without that id and one job with only it, the workflow env names the id, and the
+    run step and the id check read the split of the matrix entry."""
+    workflow = WORKFLOW.read_text()
+    assert any(_split(job) for job in _suites(workflow).values())
+    assert _split_faults(workflow) == []
+    assert '[ "${{ matrix.split }}" = deselect ] && split="--deselect=$CORE_SPLIT"' in workflow
+    assert '[ "${{ matrix.split }}" = only ] && split="$CORE_SPLIT"' in workflow
+    assert "if: matrix.split == 'only'" in workflow and '${{ matrix.args }} $split' in workflow
+    assert _split_faults(workflow.replace('split: only', 'split: deselect'))
+    assert _split_faults(workflow.replace('  CORE_SPLIT:', '  CORE_SPLITS:'))
 
 
 def _accept_select(workflow):
@@ -200,6 +241,8 @@ _MARKS = (
     'accept_solves',
     'accept_solves_long',
     'accept_solves_newton_setups',
+    'core_two_phase',
+    'default_invariance',
     'accept_solves_reference',
 )
 _SPECIAL = set(_MARKS) - {'unit', 'smoke', 'integration', 'slow'}
@@ -279,6 +322,7 @@ def test_the_nightly_jobs_select_each_marked_test_once():
             'select: accept_solves_long and',
             id='long_takes_newton',
         ),
+        pytest.param('            split: only\n', '', id='split_job_runs_the_whole_tier'),
     ],
 )
 def test_a_gap_in_the_nightly_partition_is_found(old, new):

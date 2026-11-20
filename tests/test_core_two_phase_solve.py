@@ -1,0 +1,1030 @@
+"""Full structure solves with a two-layer core: a solid inner core on the PALEOS solid iron side
+and a liquid outer core on the liquid side, with the inner-core boundary (ICB) from an iron
+melting curve or from a given inner-core mass.
+
+The side tables are generated from the real PALEOS on a small grid over core conditions, in a
+scratch cache root, so no test writes the data cache.
+"""
+
+from __future__ import annotations
+
+import math
+import os
+from pathlib import Path
+from unittest import mock
+
+import numpy as np
+import pytest
+from scipy.optimize import brentq
+
+from tests import _paleos_mock
+from tools.default_solve_reference import cpu_key
+
+# the limit of a test without its own (the slowest takes 603 s on a CI runner under coverage)
+pytestmark = [pytest.mark.integration, pytest.mark.core_two_phase, pytest.mark.timeout(2100)]
+
+LIQ, SOL = 'PALEOS-API-2phase:iron-liquid', 'PALEOS-API-2phase:iron-solid'
+WALL = 1320.0  # solver wall clock [s], about 1.5 x the slowest solve on a CI runner (875 s)
+PLOT_CPU = 'darwin-arm64'  # the plots of the solves compare their data only on this CPU
+
+
+@pytest.fixture(scope='module')
+def setup(tmp_path_factory):
+    """Material dictionaries with the 2 iron sides on a 40 pts/decade grid of 1e9-3e12 Pa and
+    1000-2e4 K, generated once into a scratch cache root, and the default config."""
+    _paleos_mock.skip_unless_real()
+    from zalmoxis import get_zalmoxis_root
+    from zalmoxis.config import load_material_dictionaries, load_zalmoxis_config
+    from zalmoxis.eos import paleos_api, paleos_api_cache
+
+    md = load_material_dictionaries()
+    if not os.path.isfile(md['PALEOS:iron'].get('eos_file', '')):
+        pytest.skip('PALEOS iron table not linked under data/')
+    grid = paleos_api.make_grid_at_resolution(1e9, 3e12, 1000.0, 2.0e4, 40)
+    side = {'format': 'paleos_api_2phase_side', 'material': 'iron', 'grid_spec': grid}
+    md[LIQ], md[SOL] = dict(side, side='liquid'), dict(side, side='solid')  # fresh, unresolved
+    with pytest.MonkeyPatch.context() as mp:
+        root = tmp_path_factory.mktemp('paleos_api_cache')
+        mp.setattr(paleos_api_cache, '_cache_root', lambda: root)
+        mp.setattr(paleos_api_cache, '_check_paleos_once', lambda sha: 'tested')
+        paleos_api_cache.resolve_paleos_api_2phase_iron(grid, n_workers=4)
+        for name in (LIQ, SOL):
+            paleos_api_cache.resolve_registry_entry(md[name])
+    root_dir = get_zalmoxis_root()
+    cfg = load_zalmoxis_config(os.path.join(root_dir, 'input', 'default.toml'))
+    return md, cfg, os.path.join(root_dir, 'input')
+
+
+def _solve(setup, inner='', core=LIQ, seed=None, **over):
+    """Solve the default 1 M_E config with the given core layers and overrides, from the
+    ``adiabat_seed`` ``seed`` when one is given."""
+    from zalmoxis.config import load_solidus_liquidus_functions, validate_config
+    from zalmoxis.mixing import parse_all_layer_mixtures
+    from zalmoxis.solver import main
+
+    md, cfg, input_dir = setup
+    cfg = dict(cfg, **{'wall_timeout': WALL, **over})
+    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=core)
+    if inner:
+        cfg['layer_eos_config']['inner_core'] = inner
+    validate_config(cfg)
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], 1.0
+    )
+    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    seeded = {} if seed is None else {'adiabat_seed': seed}
+    res = main(cfg, md, melt, input_dir, layer_mixtures=mixes, **seeded)
+    assert res['converged'] and not res['stopped_on_wall_clock']
+    return res
+
+
+def _anzellini_inverse(t):
+    from zalmoxis.melting_curves import iron_melting_anzellini13
+
+    return brentq(
+        lambda p: iron_melting_anzellini13(p) - t, 1.2e11, 2e12, xtol=1e-3, rtol=1e-15
+    )
+
+
+@pytest.fixture(scope='module')
+def fe_s_iso(setup):
+    """Isothermal solves of the 13.85 wt% S two-layer core with the Anzellini rule, one per
+    temperature [K] and per worker, with the warnings each logged."""
+    import logging
+
+    done = {}
+
+    def solve(t):
+        if t not in done:
+            records = []
+            handler = logging.Handler(logging.WARNING)
+            handler.emit = records.append
+            log = logging.getLogger('fwl.zalmoxis.solver')
+            log.addHandler(handler)
+            try:
+                res = _solve(
+                    setup,
+                    inner=SOL,
+                    core=f'{LIQ}:0.8615+CoreAlloy:S:0.1385',
+                    core_liquidus='Anzellini13-iron',
+                    temperature_mode='isothermal',
+                    surface_temperature=t,
+                )
+            finally:
+                log.removeHandler(handler)
+            done[t] = res, ' '.join(r.getMessage() for r in records)
+        return done[t]
+
+    return solve
+
+
+@pytest.mark.physics_invariant
+def test_an_isothermal_core_has_its_icb_where_iron_melts(setup, caplog):
+    """At 5000 K everywhere the ICB lies at the pressure where the Anzellini curve is 5000 K
+    (206 GPa), inner-core nodes above it and outer-core nodes below it in pressure, and the ICB
+    mass at that pressure on the final profile to the outer-loop tolerance."""
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
+    res = _solve(
+        setup,
+        inner=SOL,
+        temperature_mode='isothermal',
+        surface_temperature=5000.0,
+        core_liquidus='Anzellini13-iron',
+    )
+    core = res['core']
+    p_icb = _anzellini_inverse(5000.0)
+    # M_ic is within tolerance_outer (1e-3 of the core mass) of the root and dlnP/d(m/M_core) is
+    # about 1 here, so P_icb is within about 1e-3 of the root: 5e-3 keeps a factor 5
+    assert abs(core['P_icb'] / p_icb - 1) < 5e-3
+    assert 'pure-iron curve' not in caplog.text  # a pure-iron outer core: no warning
+    inner = core['phase'] == 1
+    assert inner[0] and not inner[-1]
+    assert np.all(core['P'][inner] > p_icb * (1 - 1e-3))
+    assert np.all(core['P'][~inner] < p_icb * (1 + 1e-3))
+    # the ICB mass comes from the previous pass; the outer loop stops when it moves by less
+    # than tolerance_outer of the core mass
+    from zalmoxis.solver import _default_solver_params
+
+    tol = _default_solver_params(res['mass_enclosed'][-1])['tolerance_outer']
+    m_at = np.interp(np.log(p_icb), np.log(core['P'][::-1]), core['m'][::-1])
+    assert abs(core['M_ic'] - m_at) <= tol * res['cmb_mass']
+    assert core['solid_above_icb_mass_fraction'] == 0.0
+
+
+def _main(setup, cfg):
+    """``main`` on the tables of ``setup`` with the layer mixtures of ``cfg``."""
+    from zalmoxis.mixing import parse_all_layer_mixtures
+    from zalmoxis.solver import main
+
+    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    return main(cfg, setup[0], None, setup[2], layer_mixtures=mixes)
+
+
+def test_main_refuses_the_liquidus_rule_with_the_newton_outer_solver(setup):
+    """main itself refuses the pair, also when the caller skips validate_config."""
+    cfg = dict(setup[1], core_liquidus='Anzellini13-iron', outer_solver='newton')
+    cfg.update(relative_tolerance=1e-9, absolute_tolerance=1e-10)  # what Newton needs
+    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
+    with pytest.raises(ValueError, match="core_liquidus needs outer_solver = 'picard'"):
+        _main(setup, cfg)
+
+
+def test_a_two_layer_core_keeps_the_mass_limit_of_the_paleos_tables(setup):
+    """The side tables span the box of the unified iron table, so they take its 50 M_E limit;
+    the mantle has no limit here, so the refusal names a side table. The solid side alone, as a
+    one-layer core, is refused for its layer before the limit."""
+    cfg = dict(setup[1], inner_core_mass_fraction=0.05, planet_mass=60 * 5.972e24)
+    cfg['layer_eos_config'] = {'core': LIQ, 'inner_core': SOL, 'mantle': 'Seager2007:MgSiO3'}
+    with pytest.raises(ValueError, match='PALEOS-API-2phase:iron-.* EOS is limited to planets'):
+        _main(setup, cfg)
+    cfg = dict(cfg, inner_core_mass_fraction=None)
+    cfg['layer_eos_config'] = {'core': SOL, 'mantle': 'Seager2007:MgSiO3'}
+    with pytest.raises(ValueError, match="iron-solid belongs in 'inner_core', not in 'core'"):
+        _main(setup, cfg)
+
+
+def test_an_accept_with_an_icb_off_the_liquidus_is_not_converged(setup, caplog):
+    """2 outer passes end on the max_iter accept while the ICB still moves: _solve returns the
+    result as not converged and says why, and main does not take it back by its retry skip.
+    Whether the tightened retry converges depends on the CPU, see the ICB case of
+    docs/Validation/hydrostatic_structure.md."""
+    from zalmoxis import solver as zs
+    from zalmoxis.mixing import parse_all_layer_mixtures
+
+    md, cfg, input_dir = setup
+    cfg = dict(
+        cfg,
+        temperature_mode='isothermal',
+        surface_temperature=5000.0,
+        core_liquidus='Anzellini13-iron',
+        max_iterations_outer=2,
+        wall_timeout=WALL,
+    )
+    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
+    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
+    res = zs._solve(cfg, md, None, input_dir, layer_mixtures=mixes)
+    assert res['converged'] is False and res['icb_converged'] is False
+    assert 'inner-core boundary' in caplog.text and 'its adiabat' not in caplog.text
+    assert res['converged_mass'] is False and res['accept_mass_limit'] is None
+    assert res['accepted_on'] is None
+    res = zs.main(cfg, md, None, input_dir, layer_mixtures=mixes)
+    assert (
+        res['accepted_on'] != 'retry_skip' and 'Retrying with tighter parameters' in caplog.text
+    )
+    assert res['icb_converged'] or not res['converged']  # never converged with the ICB off
+
+
+def test_an_accept_with_the_adiabat_icb_off_is_not_converged(setup, monkeypatch, caplog):
+    """With the liquidus root met and the ICB of the adiabat off by the core mass, no pass stops
+    on the strict test and the cap accept of the 2nd pass is returned as not converged. The
+    test of this given profile gets the CMB-point rule of its T function (5000 K)."""
+    from zalmoxis import solver as zs
+    from zalmoxis.mixing import parse_all_layer_mixtures
+
+    rules = []
+
+    def misses(m, p, t, cmb, *rest):
+        rules.append(rest[-1])
+        return 0.0, cmb
+
+    monkeypatch.setattr(zs, 'icb_misses', misses)
+    md, cfg, input_dir = setup
+    cfg = dict(
+        cfg,
+        temperature_mode='isothermal',
+        surface_temperature=5000.0,
+        core_liquidus='Anzellini13-iron',
+        max_iterations_outer=2,
+        wall_timeout=WALL,
+    )
+    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
+    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
+    res = zs._solve(cfg, md, None, input_dir, layer_mixtures=mixes)
+    assert res['converged'] is False and res['icb_converged'] is False
+    assert res['accepted_on'] is None and '1 off the ICB of its adiabat' in caplog.text
+    assert rules and all(r is not None and r(1e11, 2e11, 6000.0) == 5000.0 for r in rules)
+
+
+def _superheat_met(res, bound=0.5):
+    """Test 1 of the ICB on the reported signed S: |S| <= bound for a partial inner core,
+    S >= -bound at the centre with no inner core, S <= bound at the core mass with a full
+    one."""
+    s, f = res['icb_superheat'], res['core']['M_ic'] / res['cmb_mass']
+    return (s >= -bound) if f == 0.0 else (s <= bound) if f == 1.0 else abs(s) <= bound
+
+
+def _pass_adiabat_icbs(spy, res):
+    """icb_mass of each full adiabat of an outer pass with an inner core, in order: calls on the
+    structure of a pass before, so the self-consistency adiabat on the returned structure and
+    the liquid branch (icb_mass 0.0) are left out."""
+    r = np.asarray(res['radii'])
+    return [
+        c.kwargs['icb_mass']
+        for c in spy.call_args_list
+        if len(c.args[0]) == r.size
+        and c.kwargs['icb_mass'] != 0.0
+        and not np.array_equal(c.args[0], r)
+    ]
+
+
+def _fes_cap(setup, caplog, t_func=None, **over):
+    """_solve of the 2480 K Fe-S core, liquidus rule, 10 outer passes, warnings logged."""
+    from zalmoxis import solver as zs
+    from zalmoxis.config import load_solidus_liquidus_functions
+    from zalmoxis.mixing import parse_all_layer_mixtures
+
+    md, cfg, input_dir = setup
+    cfg = dict(
+        cfg, core_liquidus='Anzellini13-iron', surface_temperature=2480.0, wall_timeout=WALL
+    )
+    cfg.update({'max_iterations_outer': 10, 'tolerance_outer': 1e-3, **over})
+    cfg['layer_eos_config'] = dict(
+        cfg['layer_eos_config'], core=f'{LIQ}:0.8615+CoreAlloy:S:0.1385', inner_core=SOL
+    )
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], 1.0
+    )
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
+    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    return zs._solve(
+        cfg, md, melt, input_dir, temperature_function=t_func, layer_mixtures=mixes
+    )
+
+
+def test_a_cap_accept_reads_the_liquid_branch_of_the_restored_pass(setup, monkeypatch, caplog):
+    """10 outer passes of the 2480 K Fe-S core end on the max_iter accept, which restores the
+    best pass. The final ICB test reads the layer ICB of the returned core and its liquid
+    branch: at the core nodes above the ICB of the layers and of the adiabat of that pass (the
+    first one left out, see _liquid_branch) the liquid branch equals the returned T to
+    round-off; icb_converged holds exactly when |S| <= 0.5 K and the adiabat ICB lies within
+    tolerance_outer of the core mass."""
+    from zalmoxis import solver as zs
+    from zalmoxis.core_profile import icb_superheat
+
+    heat = mock.Mock(wraps=icb_superheat)
+    adiabat = mock.Mock(wraps=zs.compute_adiabatic_temperature)
+    monkeypatch.setattr(zs, 'icb_superheat', heat)
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
+    res = _fes_cap(setup, caplog)
+    assert res['icb_adiabat'] in _pass_adiabat_icbs(adiabat, res)  # the ICB of a real pass
+    assert 'Accepting max_iter solution' in caplog.text
+    m, p, t_l, cmb, _, icb, rule = heat.call_args.args  # the final ICB test
+    assert icb == res['core']['M_ic'] and res['icb_adiabat'] is not None
+    assert rule is not None  # the core-side T of the CMB point (_cmb_point_rule)
+    m = np.asarray(m)
+    up = np.flatnonzero((m > max(icb, res['icb_adiabat'])) & (m < cmb))[1:]
+    # near-tangent case: the restored pass differs by host (adiabat ICB 0.78 of the CMB mass and
+    # 7 nodes on macOS arm64, 0.87 to 0.90 and 4 nodes on the Linux runner)
+    assert up.size >= 3
+    np.testing.assert_allclose(np.asarray(t_l)[up], res['temperature'][up], rtol=1e-12, atol=0)
+    s, miss = icb_superheat(*heat.call_args.args)
+    lag = abs(res['icb_adiabat'] - icb)
+    assert res['icb_superheat'] == s
+    assert res['icb_converged'] == (miss <= 0.5 and lag <= 1e-3 * cmb)
+
+
+@pytest.mark.parametrize(('miss', 'passes'), [(10.0, 10), (1.0, 25)])
+def test_an_accept_with_the_liquid_off_the_liquidus_is_not_converged(
+    setup, monkeypatch, caplog, miss, passes
+):
+    """With the superheat test failing on every pass (|S| set to 10 K, or 1 K, just above the
+    0.5 K bound), the cap accept of the 2480 K Fe-S core is returned as not converged, and the
+    warning gives the miss in K. With its own superheat the solve accepts on the strict test
+    after about 17 passes, so within 25 passes the superheat bound alone keeps the 1 K case
+    from a strict accept; the cap accept restores the best pass, whose adiabat ICB can be off."""
+    from zalmoxis import solver as zs
+
+    monkeypatch.setattr(zs, 'icb_superheat', lambda *_: (-miss, miss))
+    res = _fes_cap(setup, caplog, max_iterations_outer=passes)
+    assert 'Accepting max_iter solution' in caplog.text
+    assert res['converged'] is False and res['icb_converged'] is False
+    assert res['icb_superheat'] == -miss and f'liquid by {miss:.3g} K' in caplog.text
+    lag = abs(res['icb_adiabat'] - res['core']['M_ic']) / res['cmb_mass']
+    named = 'off the ICB of its adiabat' in caplog.text  # named only when it fails
+    assert named == (lag > 1e-3)
+
+
+def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
+    setup, monkeypatch, caplog
+):
+    """Once the adiabat has its liquid branch, every ICB update takes the liquidus root with
+    m^(2/3) linear in P (m23), the mass that the superheat test and the core arrays take at that
+    pressure; the passes before it take the root linear in m (8 passes of the 2480 K Fe-S core).
+    The updates of the passes below blend 1 (blend from the solver's debug line of each pass,
+    0.75 included) give the readers no CMB-point rule, those at blend 1 a rule. On the last
+    update the rule (``_cmb_point_rule``) meets the liquid branch of the solver recomputed with a
+    node at the core mass to 1e-6 K."""
+    import inspect
+
+    from zalmoxis import solver as zs
+    from zalmoxis.core_profile import _cmb_point
+    from zalmoxis.eos.temperature import compute_adiabatic_temperature as adiabat_of
+
+    blend, real_debug, real_icb = [0.0], zs.logger.debug, zs.icb_from_profile
+
+    def debug(msg, *args, **kwargs):
+        if msg.startswith('Outer iter %d: adiabat blend'):
+            blend.append(args[1])
+        return real_debug(msg, *args, **kwargs)
+
+    def update(*args, **kwargs):
+        if 'm23' in kwargs:
+            blends.append(blend[-1])
+        return real_icb(*args, **kwargs)
+
+    blends, spy, adiabat = [], mock.Mock(side_effect=update), mock.Mock(wraps=adiabat_of)
+    monkeypatch.setattr(zs.logger, 'debug', debug)
+    monkeypatch.setattr(zs, 'icb_from_profile', spy)
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
+    _fes_cap(setup, caplog, max_iterations_outer=8)
+    calls = [c for c in spy.call_args_list if 'm23' in c.kwargs]  # the ICB updates
+    m23 = [c.kwargs['m23'] for c in calls]
+    assert m23[-1] is True and m23 == sorted(m23), m23
+    rules = [c.kwargs['cmb_point_rule'] for c in calls]
+    assert 0.75 in blends and blends[-1] == 1.0, blends
+    assert [r is None for r in rules] == [b < 1.0 for b in blends], (blends, rules)
+    final = [c.kwargs for c in spy.call_args_list if 'm23' not in c.kwargs]  # the core result
+    assert final and final[-1]['cmb_point_rule'] is not None
+    m, p, t, cmb = (np.asarray(a, dtype=float) for a in calls[-1].args[:4])
+    sig = inspect.signature(adiabat_of)
+    kw = next(
+        b
+        for b in (sig.bind(*c.args, **c.kwargs).arguments for c in adiabat.call_args_list)
+        if b.get('icb_mass') == 0.0 and np.array_equal(b['pressure'], p)
+    )  # the liquid branch of that pass
+    n = int(np.count_nonzero(m < cmb * (1 - 1e-12)))
+    pc = _cmb_point(m, p, t, cmb, n)[1]
+    r = np.asarray(kw['radii'])
+    inserted = dict(
+        kw,
+        radii=np.insert(r, n, 0.5 * (r[n - 1] + r[n])),
+        pressure=np.insert(p, n, pc),
+        mass_enclosed=np.insert(m, n, cmb),
+    )
+    exact = adiabat_of(**inserted)[n]
+    assert abs(rules[-1](pc, p[n - 1], t[n - 1]) - exact) <= 1e-6, exact
+
+
+def test_a_cap_accept_on_the_blend_ramp_is_refused(setup, monkeypatch, caplog):
+    """6 outer passes of the 2480 K Fe-S core end on the cap accept of a pass of the blend ramp
+    (blend 0.5). No ICB reader of these passes gets a CMB-point rule, and the full-adiabat rule
+    refuses the accept. With that refusal off (accept keys kept), the check of the accepted pass
+    raises StructureInvariantError."""
+    from zalmoxis import solver as zs
+    from zalmoxis.invariants import StructureInvariantError
+
+    rules, real = [], zs._cmb_point_rule
+
+    def rule_spy(*args, **kwargs):
+        rules.append(real(*args, **kwargs))
+        return rules[-1]
+
+    monkeypatch.setattr(zs, '_cmb_point_rule', rule_spy)
+    try:
+        res = _fes_cap(setup, caplog, max_iterations_outer=6)
+    except StructureInvariantError as err:
+        pytest.fail(f'a pass of the blend ramp was accepted: {err}')
+    assert rules and all(r is None for r in rules)  # every reader site of every pass
+    assert res['adiabat_blend'] == 0.5 and res['converged'] is False
+    assert 'No accept of a pass at adiabat blend 0.50' in caplog.text
+    monkeypatch.setattr(zs, '_REFUSED', dict(zs._REFUSED, converged=True))
+    with pytest.raises(StructureInvariantError, match='not on the full adiabat'):
+        _fes_cap(setup, caplog, max_iterations_outer=6)
+
+
+def test_a_caller_temperature_function_gives_the_cmb_point_its_value(
+    setup, monkeypatch, caplog
+):
+    """With a caller temperature_function on the adiabatic label of a coupled run, the solve
+    computes no adiabat, and every ICB reader takes the CMB point from that function at the CMB
+    radius of its profile (r^3 linear in the enclosed mass), to 1e-12."""
+    from zalmoxis import solver as zs
+
+    def tf(r, p):
+        return 3000.0 + 1e-6 * r + 1e-9 * p
+
+    calls, real = [], zs._cmb_point_rule
+
+    def rule_spy(core_table, t_func, radii, mass, *rest, **kw):
+        rule = real(core_table, t_func, radii, mass, *rest, **kw)
+        calls.append((np.array(radii), np.array(mass), rule))
+        return rule
+
+    monkeypatch.setattr(zs, '_cmb_point_rule', rule_spy)
+    res = _fes_cap(setup, caplog, t_func=tf, max_iterations_outer=3)
+    assert calls  # every reader site of every pass; the solver wraps tf in its own function
+    cmb = res['cmb_mass']
+    for r, m, rule in calls:
+        r_cmb = float(np.interp(cmb, m, r**3)) ** (1.0 / 3.0)
+        assert rule is not None
+        assert rule(1.4e11, 1.5e11, 6000.0) == pytest.approx(tf(r_cmb, 1.4e11), rel=1e-12)
+
+
+def test_main_refuses_an_icb_rule_without_an_inner_core(setup):
+    """main itself refuses core_liquidus without an inner core; the rule check takes None as
+    unset and an empty inner_core as no inner core."""
+    cfg = dict(setup[1], core_liquidus='Anzellini13-iron')
+    with pytest.raises(ValueError, match='need an inner_core layer'):
+        _main(setup, cfg)
+    from zalmoxis.config import _check_icb_rule
+
+    assert _check_icb_rule(dict(cfg, core_liquidus=None)) is None  # None counts as unset
+    one_layer = {'core': 'PALEOS:iron', 'mantle': 'PALEOS:MgSiO3', 'inner_core': ''}
+    assert _check_icb_rule({'layer_eos_config': one_layer}) is None  # '' is no inner core
+
+
+def test_solve_ignores_a_liquidus_without_an_inner_core(setup):
+    """_solve, called past the checks of main, solves a one-layer core with no inner core."""
+    from zalmoxis import solver as zs
+    from zalmoxis.mixing import parse_all_layer_mixtures
+
+    md, cfg, input_dir = setup
+    cfg = dict(
+        cfg,
+        core_liquidus='Anzellini13-iron',
+        temperature_mode='isothermal',
+        surface_temperature=5000.0,
+        wall_timeout=WALL,
+    )
+    res = zs._solve(
+        cfg,
+        md,
+        None,
+        input_dir,
+        layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
+    )
+    assert res['converged'] and not res['stopped_on_wall_clock']
+    assert res['core']['M_ic'] == 0.0
+
+
+@pytest.mark.parametrize('frac', [np.float32(0.05), 0.0, 1.0])
+def test_a_given_inner_core_mass_sets_the_icb(setup, frac):
+    """The ICB lies at the given mass in double precision, also at the ends of the range (no
+    inner core, a full one); a NumPy float32 fraction covers the float case too, since its
+    value enters through float(frac)."""
+    res = _solve(setup, inner=SOL, core_liquidus='', inner_core_mass_fraction=frac)
+    core = res['core']
+    assert core['M_ic'] == float(frac) * res['cmb_mass'] and isinstance(core['M_ic'], float)
+    inner = core['phase'] == 1
+    if frac == 1.0:  # the node at the core mass takes the core side, here the inner core
+        assert inner.all() and core['P_icb'] == core['P'][-1]  # a full inner core: the CMB node
+        return
+    assert np.all(core['m'][inner] < core['M_ic'])
+    assert np.all(core['m'][~inner] >= core['M_ic'] * (1 - 1e-12))
+
+
+@pytest.mark.parametrize(('t', 'all_solid'), [(8000.0, False), (3000.0, True)])
+def test_a_core_wholly_above_or_below_the_liquidus(setup, t, all_solid):
+    """At 8000 K the centre is above the liquidus: no inner core; at 3000 K the whole core is
+    below it: all inner core."""
+    res = _solve(
+        setup,
+        inner=SOL,
+        temperature_mode='isothermal',
+        surface_temperature=t,
+        core_liquidus='Anzellini13-iron',
+    )
+    core = res['core']
+    assert core['M_ic'] == (res['cmb_mass'] if all_solid else 0.0)
+    assert np.all(core['phase'] == int(all_solid))  # the node at the core mass too
+    if all_solid:  # a full inner core takes the pressure of the CMB node (core_arrays)
+        assert core['P_icb'] == core['P'][-1]
+
+
+def test_solid_above_a_liquid_centre_is_reported(setup):
+    """A linear profile from 7000 K at the centre puts the centre above the liquidus and the
+    core top below it: no inner core, the solid mass above the ICB reported and flagged."""
+    res = _solve(
+        setup,
+        inner=SOL,
+        temperature_mode='linear',
+        center_temperature=7000.0,
+        surface_temperature=300.0,
+        core_liquidus='Anzellini13-iron',
+    )
+    core = res['core']
+    assert core['M_ic'] == 0.0
+    assert 0.0 < core['solid_above_icb_mass_fraction'] < 1.0
+    assert core['solid_above_icb']
+
+
+@pytest.mark.physics_invariant
+def test_the_core_arrays_of_a_two_layer_core(setup, fe_s_iso):
+    """The core arrays hold r, m, P, rho, g, T, phase and w_S per node from the centre to a CMB
+    node at the core mass; the outer core carries its S, the inner core none."""
+    res, warnings = fe_s_iso(5000.0)
+    core = res['core']
+    assert 'pure-iron curve' in warnings  # a named curve with an alloy outer core
+    assert core['w_layers'] == {'core': {'S': 0.1385}, 'inner_core': {}}
+    for k in ('r', 'm', 'P', 'rho', 'g', 'T', 'phase', 'w_S'):
+        assert core[k].shape == core['r'].shape, k
+    assert core['r'][0] == 0.0 and np.all(np.diff(core['r']) > 0)
+    assert core['m'][-1] == pytest.approx(res['cmb_mass'], rel=1e-10)
+    inner = core['phase'] == 1
+    assert np.all(core['w_S'][inner] == 0.0) and np.all(core['w_S'][~inner] == 0.1385)
+    assert core['R_icb'] > 0.0 and core['P_icb'] > core['P'][-1]
+    # the node at the core mass takes the outer-core EOS, not the mantle one
+    from zalmoxis.mixing import LayerMixture, calculate_mixed_density
+
+    outer = LayerMixture([LIQ, 'CoreAlloy:S'], [0.8615, 0.1385])
+    rho_cmb = calculate_mixed_density(
+        core['P'][-1], core['T'][-1], outer, setup[0], None, None, {}
+    )
+    assert core['rho'][-1] == pytest.approx(rho_cmb, rel=1e-6) and core['phase'][-1] == 0
+
+
+PREM_DATA = Path(__file__).parent / 'validation' / 'data'
+# Hirose et al. 2021, PDF p. 3: midpoints of the single-element outer cores [wt%]
+HIROSE_MID = {'S': 13.85, 'Si': 9.55, 'O': 8.65, 'H': 0.975}
+
+
+def _prem_core(n=40001):
+    """PREM core (Dziewonski & Anderson 1981): Table I density, and pressure and gravity by
+    hydrostatics inward from the Table II CMB pressure; ``region`` 0 inner, 1 outer core."""
+    from scipy.integrate import cumulative_trapezoid
+
+    from zalmoxis.constants import G
+
+    read = dict(delimiter=',', names=True, dtype=None, encoding=None, skip_header=2)
+    poly = np.genfromtxt(PREM_DATA / 'prem_core_polynomials.csv', **read)
+    tab = np.genfromtxt(PREM_DATA / 'prem_core_table2.csv', **read)
+    r_icb, r_cmb = poly['r_hi_km'] * 1e3
+    r = np.r_[np.linspace(0.0, r_icb, n), np.linspace(r_icb, r_cmb, n)]
+    region = np.repeat([0, 1], n)
+    rho = 1e3 * sum(poly[f'a{i}'][region] * (r / 6371e3) ** i for i in range(4))
+    m = cumulative_trapezoid(4 * np.pi * r**2 * rho, r, initial=0.0)
+    g = np.divide(G * m, r**2, out=np.zeros_like(r), where=r > 0)
+    w = cumulative_trapezoid(rho * g, r, initial=0.0)
+    p = tab['pressure_kbar'][-1] * 1e8 + w[-1] - w
+    return dict(r=r, rho=rho, P=p, g=g, m=m, region=region, tab=tab)
+
+
+def _against_prem(core, prem, by_phase):
+    """Median and largest rho / rho_PREM - 1 per region at equal pressure, and the node count;
+    the region of a node is its phase (two-layer core) or its side of the PREM ICB pressure."""
+    P, rho = core['P'], core['rho']
+    p_icb = prem['P'][prem['region'] == 0][-1]
+    region = np.where(core['phase'] == 1, 0, 1) if by_phase else np.where(P > p_icb, 0, 1)
+    out = {}
+    for k, name in enumerate(('inner', 'outer')):
+        sel = prem['region'] == k
+        p_k, rho_k = prem['P'][sel][::-1], prem['rho'][sel][::-1]
+        hit = (region == k) & (P >= p_k[0]) & (P <= p_k[-1])
+        d = rho[hit] / np.interp(P[hit], p_k, rho_k) - 1.0
+        out[name] = (float(np.median(d)), float(d[np.argmax(np.abs(d))]), int(hit.sum()))
+    return out
+
+
+# median and largest rho / rho_PREM - 1 per region at equal pressure, macOS arm64 reference
+PREM_PINS = {
+    'Fe, 1 layer': {'inner': (0.020085, 0.021050), 'outer': (0.080386, 0.098835)},
+    'Fe, 2 layers': {'inner': (0.030004, 0.030866), 'outer': (0.080388, 0.098844)},
+    'Fe-S, 2 layers': {'inner': (0.031335, 0.034389), 'outer': (0.004254, 0.021169)},
+}
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
+@pytest.mark.timeout(3000)  # 3 solves
+def test_an_earth_core_against_prem(setup, request):
+    """PREM (Dziewonski & Anderson 1981): the hydrostatic PREM core meets Table II, and the core
+    of the default 1 M_E planet differs from it at equal pressure by the pinned medians and
+    largest values per region. The 3 cores: one-layer PALEOS:iron, a two-layer pure-iron core
+    and a two-layer core with the 13.85 wt% S outer core of Hirose et al. (2021), both with the
+    PREM inner-core mass fraction. The Si, O and H midpoint cores have the S density by the
+    calibration of the linear law, so they give the same planet."""
+    prem = _prem_core()
+    tab, inner = prem['tab'], prem['region'] == 0
+    np.testing.assert_allclose(
+        np.interp(tab['radius_km'] * 1e3, prem['r'], prem['rho'])[[0, 3]],
+        tab['density_g_cm3'][[0, 3]] * 1e3,
+        rtol=1e-5,
+    )
+    for got, want in (
+        (prem['P'][0], tab['pressure_kbar'][0] * 1e8),
+        (prem['P'][inner][-1], tab['pressure_kbar'][1] * 1e8),
+        (prem['g'][-1], tab['gravity_cm_s2'][3] / 100),
+    ):
+        assert abs(got / want - 1) < 1e-3
+    f_ic = prem['m'][inner][-1] / prem['m'][-1]
+    s_core = f'{LIQ}:{1 - HIROSE_MID["S"] / 100:.4f}+CoreAlloy:S:{HIROSE_MID["S"] / 100:.4f}'
+    cores = {
+        'Fe, 1 layer': _solve(setup, core='PALEOS:iron')['core'],
+        'Fe, 2 layers': _solve(setup, inner=SOL, inner_core_mass_fraction=f_ic)['core'],
+        'Fe-S, 2 layers': _solve(setup, inner=SOL, core=s_core, inner_core_mass_fraction=f_ic)[
+            'core'
+        ],
+    }
+    for name, core in cores.items():
+        got = _against_prem(core, prem, by_phase=name != 'Fe, 1 layer')
+        for region, (median, largest, n) in got.items():
+            assert n >= 5, (name, region, n)
+            np.testing.assert_allclose(
+                (median, largest), PREM_PINS[name][region], atol=1e-3, err_msg=name
+            )
+
+    def figure(x, scale, label):
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(7.6, 3.6))
+        for k in (0, 1):
+            sel = prem['region'] == k
+            ax.plot(
+                prem[x][sel] * scale,
+                prem['rho'][sel],
+                '--',
+                lw=1.2,
+                color=plt.rcParams['axes.edgecolor'],
+                label='PREM' if k == 0 else None,
+            )
+        colours = plt.rcParams['axes.prop_cycle'].by_key()['color'][1:]
+        for (name, core), colour in zip(cores.items(), colours):
+            # the wide 1-layer line shows under the 2-layer line in the outer core
+            lw = 3.0 if name == 'Fe, 1 layer' else 1.2
+            ax.plot(core[x][:-1] * scale, core['rho'][:-1], lw=lw, color=colour, label=name)
+        ax.set(xlabel=label, ylabel='Density [kg/m$^3$]')
+        ax.xaxis.set_major_locator(plt.MaxNLocator(4))
+        ax.grid(False)
+        if x == 'P':  # centre on the left, as by radius
+            ax.invert_xaxis()
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
+        fig.tight_layout()
+        fig.canvas.draw()
+        assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
+        return fig
+
+    if cpu_key() != PLOT_CPU and request.config.getoption('validation_plots') is None:
+        return  # an iterative solve differs by about 5e-4 between CPUs; the pins above hold
+    plot = request.getfixturevalue('validation_plot')
+    plot(lambda: figure('P', 1e-9, 'Pressure [GPa]'), 'core_two_phase_prem_pressure')
+    plot(lambda: figure('r', 1e-3, 'Radius [km]'), 'core_two_phase_prem_radius')
+
+
+def test_the_bulk_s_of_the_core_follows_the_icb(fe_s_iso):
+    """The layer compositions are inputs, so the bulk S of a Fe-S core changes with the ICB: an
+    isothermal core at 5000 and 5500 K puts 0.480 and 0.159 of the core mass in the inner core
+    (pins to 0.01, 3 times the spread over 5 perturbed starts at 5000 K), and the bulk S falls
+    from 13.85 wt% of the outer core to 7.20 and 11.65 wt% of the core, read on the core arrays.
+    The pins are regression values of this code, not an outside reference."""
+    w_oc = 0.1385
+    for t, f_pin, s_pin in ((5000.0, 0.480, 0.0720), (5500.0, 0.159, 0.1165)):
+        res = fe_s_iso(t)[0]
+        core = res['core']
+        f = core['M_ic'] / res['cmb_mass']
+        assert f == pytest.approx(f_pin, abs=0.01)
+        # the S mass of the core arrays: trapezoid over the nodes, whose mixed ICB segment
+        # errs by at most w_oc dm / 2, about 1e-3 of the core mass here
+        m, w = core['m'], core['w_S']
+        s_mass = float(np.sum(0.5 * (w[1:] + w[:-1]) * np.diff(m))) / res['cmb_mass']
+        assert s_mass == pytest.approx(s_pin, abs=2e-3) and (1 - f) * w_oc == pytest.approx(
+            s_pin, abs=0.01 * w_oc
+        )
+
+
+def test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb(setup, monkeypatch):
+    """At 2480 K at the surface the Fe-S core on the adiabat holds a partial inner core; the
+    adiabat of the returned pass (the last pass adiabat, recorded by a spy) took the inner-core
+    mass that the result reports as icb_adiabat, within the default tolerance_outer (1e-3) of
+    the core mass of the inner-core mass of the layers."""
+    from zalmoxis import solver
+
+    spy = mock.Mock(wraps=solver.compute_adiabatic_temperature)
+    monkeypatch.setattr(solver, 'compute_adiabatic_temperature', spy)
+    res = _solve(
+        setup,
+        inner=SOL,
+        core=f'{LIQ}:0.8615+CoreAlloy:S:0.1385',
+        core_liquidus='Anzellini13-iron',
+        surface_temperature=2480.0,
+    )
+    m_ic, cmb = res['core']['M_ic'], res['cmb_mass']
+    assert 0.0 < m_ic < cmb and res['accepted_on'] == 'strict'
+    used = _pass_adiabat_icbs(spy, res)
+    assert used and used[-1] == res['icb_adiabat']
+    assert abs(used[-1] - m_ic) <= 1e-3 * cmb, (used[-1] / cmb, m_ic / cmb)
+
+
+def _liquid_branch(setup, res):
+    """Independent liquid branch: d ln T / d ln P = nabla_ad of the liquid side, integrated by
+    DOP853 (rtol 1e-13) from the second core node above the ICB of the returned profile to the
+    centre. The returned T comes from the T(P) table of the pass before; the first node above
+    the ICB can fall in a table segment that holds the ICB of that pass, and so read up to
+    about 1 K of the solid side. Returns T(P) of the branch, the start node and the liquidus."""
+    from scipy.integrate import solve_ivp
+
+    from zalmoxis.melting_curves import get_melting_curve_function
+    from zalmoxis.mixing import get_mixed_nabla_ad, parse_all_layer_mixtures
+
+    md = setup[0]
+    mix, cache = parse_all_layer_mixtures({'core': LIQ})['core'], {}
+    m, p, t = (np.asarray(res[k], float) for k in ('mass_enclosed', 'pressure', 'temperature'))
+    j = int(np.flatnonzero(m > res['core']['M_ic'])[0]) + 1
+    assert m[j] < res['cmb_mass']  # a core node of the liquid side
+    sol = solve_ivp(
+        lambda x, y: [get_mixed_nabla_ad(np.exp(x), np.exp(y[0]), mix, md, cache)],
+        (np.log(p[j]), np.log(p[0])),
+        [np.log(t[j])],
+        method='DOP853',
+        rtol=1e-13,
+        atol=1e-12,
+        dense_output=True,
+    )
+    assert sol.success, sol.message
+    return (
+        (lambda x: float(np.exp(sol.sol(np.log(x))[0]))),
+        j,
+        get_melting_curve_function('Anzellini13-iron'),
+    )
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
+def test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_melting(setup):
+    """Cases 1 and 3 of the ICB Validation. A growing inner core has its outer-core liquid at
+    the liquidus at the ICB: the zero-superheat condition of Labrosse (2015, Phys. Earth Planet.
+    Inter. 247, 36, Sect. 2, doi:10.1016/j.pepi.2015.02.002) and Nimmo (2015, Treatise on
+    Geophysics 8.02, Fig. 2, doi:10.1016/B978-0-444-53802-4.00139-1). The pure-iron core of the
+    default 1 M_E planet at 2500 K holds a partial inner core. An independent DOP853 integration
+    of the liquid side nabla_ad from the second outer-core node gives the superheat S at the ICB
+    of the returned profile (|S| <= 0.5 K) and its liquidus root G_B (within 0.005 of the core
+    mass of the returned inner core)."""
+    from scipy.optimize import brentq
+
+    res = _solve(setup, inner=SOL, core_liquidus='Anzellini13-iron', surface_temperature=2500.0)
+    core, cmb = res['core'], res['cmb_mass']
+    f = core['M_ic'] / cmb
+    branch, j, liq = _liquid_branch(setup, res)
+    s = branch(core['P_icb']) - float(liq(core['P_icb']))
+    p = np.asarray(res['pressure'], float)
+    p_b = brentq(lambda x: branch(x) - float(liq(x)), p[j], p[0], xtol=1e-3, rtol=1e-14)
+    ok = p > 0  # padded nodes past a surface stop have P = 0
+    m = np.asarray(res['mass_enclosed'], float)
+    g_b = float(np.interp(np.log(p_b), np.log(p[ok][::-1]), m[ok][::-1]))
+    print(f'f {f:.4f} S {s:+.3f} K G_B {g_b / cmb:.4f} accepted_on {res["accepted_on"]}')
+    assert 0.0 < f < 1.0 and abs(s) <= 0.5, (f, s)
+    assert abs(g_b / cmb - f) <= 0.005, (g_b / cmb, f)
+    assert _superheat_met(res) and res['icb_converged']
+
+
+# K, from the 5 starts of the test (macOS arm64); the factor is the bound over the largest miss
+ICB_NODE_BOUND = 3.0  # first inner-core node (largest 0.64 K, factor 4.7)
+ICB_CENTRE_BOUND = 1.5  # centre (largest 0.49 K, factor 3.1)
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.parametrize('k', range(5))
+def test_the_adiabat_crosses_the_icb_at_its_pressure(setup, k):
+    """The pure-iron core of the default 1 M_E planet at 2500 K (planet mass and surface
+    temperature x (1 + k 1e-12)) against DOP853 integrations of nabla_ad (rtol 1e-12, atol
+    1e-14): of the liquid from the first outer-core node to the ICB pressure of the core
+    arrays, then of the solid to the first inner-core node, and of the solid from that node to
+    the centre. At 258 GPa nabla_ad is 0.44 on the liquid side and 0.22 on the solid side, so a
+    node segment that takes one side over its whole length misses by up to 21 K."""
+    from scipy.integrate import solve_ivp
+
+    from zalmoxis.mixing import get_mixed_nabla_ad, parse_all_layer_mixtures
+
+    md, cfg, _ = setup
+    res = _solve(
+        setup,
+        inner=SOL,
+        core_liquidus='Anzellini13-iron',
+        surface_temperature=2500.0 * (1 + k * 1e-12),
+        planet_mass=cfg['planet_mass'] * (1 + k * 1e-12),
+    )
+    m, p, t = (np.asarray(res[x], float) for x in ('mass_enclosed', 'pressure', 'temperature'))
+    icb = res['core']['M_ic']
+    i = int(np.flatnonzero(m < icb)[-1])  # first inner-core node below the ICB
+    assert 0 < i and m[i + 1] < res['cmb_mass']
+    p_icb = res['core']['P_icb']
+    mixes = parse_all_layer_mixtures(
+        {**cfg['layer_eos_config'], 'core': LIQ, 'inner_core': SOL}
+    )
+
+    def dop(layer, p0, p1, t0):
+        def rhs(x, y):
+            return [get_mixed_nabla_ad(math.exp(x), math.exp(y[0]), mixes[layer], md, {})]
+
+        ivp = solve_ivp(
+            rhs,
+            (math.log(p0), math.log(p1)),
+            [math.log(t0)],
+            method='DOP853',
+            rtol=1e-12,
+            atol=1e-14,
+        )
+        assert ivp.status == 0
+        return math.exp(ivp.y[0, -1])
+
+    t_inner = dop('inner_core', p_icb, p[i], dop('core', p[i + 1], p_icb, t[i + 1]))
+    t_centre = dop('inner_core', p[i], p[0], t[i])
+    print(
+        f'k {k}: first inner-core node {t[i] - t_inner:+.3f} K, centre {t[0] - t_centre:+.3f} K'
+    )
+    assert abs(t[i] - t_inner) < ICB_NODE_BOUND, (t[i], t_inner)
+    assert abs(t[0] - t_centre) < ICB_CENTRE_BOUND, (t[0], t_centre)
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
+def test_a_two_layer_core_takes_its_icb_from_the_core_temperature_table(setup, request):
+    """T2 of the core temperature table: a pure-iron two-layer core with the Anzellini liquidus
+    and the CMB-anchored label of a coupled run, its core T from a table that crosses the
+    liquidus at P_X and its mantle T from a function. Every outer and inner core node, and the
+    CMB node of the core arrays, carries table(P); the ICB lies at the root of
+    table(P) = T_liq(P), and the core mass closes on the returned density."""
+    from tests._core_table_helpers import CLOSURE, _mass_closure
+    from zalmoxis.config import load_solidus_liquidus_functions
+    from zalmoxis.melting_curves import iron_melting_anzellini13 as t_liq
+    from zalmoxis.mixing import parse_all_layer_mixtures
+    from zalmoxis.solver import _default_solver_params, main
+    from zalmoxis.structure_model import core_temperature, is_core
+
+    p_x = 3.3e11  # Pa: the table meets the liquidus here, inside the core
+    slope = 0.5 * (t_liq(p_x * 1.001) - t_liq(p_x * 0.999)) / (0.002 * p_x)
+    p_tab = np.array([1.0e11, p_x, 4.5e11])
+    table = (p_tab, t_liq(p_x) + slope * (p_tab - p_x))
+    md, cfg, input_dir = setup
+    cfg = dict(
+        cfg,
+        wall_timeout=WALL,
+        temperature_mode='adiabatic_from_cmb',
+        cmb_temperature=4000.0,
+        core_liquidus='Anzellini13-iron',
+    )
+    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
+    melt = load_solidus_liquidus_functions(
+        cfg['layer_eos_config'], cfg['rock_solidus'], cfg['rock_liquidus'], 1.0
+    )
+    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    res = main(
+        cfg,
+        md,
+        melt,
+        input_dir,
+        layer_mixtures=mixes,
+        temperature_function=lambda r, p: 2500.0,
+        core_temperature_arrays=table,
+    )
+    assert res['converged'] and res['icb_converged'] and res['core_T_used'] is True
+    m, p = (np.asarray(res[k], float) for k in ('mass_enclosed', 'pressure'))
+    core = is_core(m, res['cmb_mass'])
+    np.testing.assert_allclose(
+        np.asarray(res['temperature'], float)[core], core_temperature(p[core], table), rtol=1e-9
+    )
+    arr = res['core']  # the core arrays end with a CMB node on the core side
+    np.testing.assert_allclose(arr['T'], core_temperature(arr['P'], table), rtol=1e-9)
+    p_b = brentq(lambda x: float(core_temperature(x, table)) - t_liq(x), 1.5e11, 4.4e11)
+    m_b = np.interp(p_b, p[core][::-1], m[core][::-1] ** (2.0 / 3.0)) ** 1.5
+    cmb, m_ic = res['cmb_mass'], arr['M_ic']
+    tol = (
+        cfg.get('tolerance_outer')
+        or _default_solver_params(cfg['planet_mass'])['tolerance_outer']
+    )
+    assert 0.0 < m_ic < cmb and abs(m_b - m_ic) <= tol * cmb, (m_b / cmb, m_ic / cmb)
+    assert abs(_mass_closure(res)) < CLOSURE
+
+    def figure():
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(7.4, 3.4))
+        c = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        pg = np.linspace(p[core].min(), p[core].max(), 20)
+        ax.plot(pg / 1e9, t_liq(pg), color=c[1], label='iron liquidus (Anzellini 2013)')
+        ax.plot(pg / 1e9, core_temperature(pg, table), color=c[0], lw=1, label='core T table')
+        sub = slice(None, None, 5)
+        ax.plot(
+            arr['P'][sub] / 1e9,
+            arr['T'][sub],
+            'o',
+            color=c[0],
+            ms=5,
+            mfc='none',
+            label='core nodes (every 5th)',
+        )
+        ax.axvline(arr['P_icb'] / 1e9, color=c[2], ls='--', lw=1, label='ICB of the solve')
+        ax.set(xlabel='Pressure [GPa]', ylabel='Temperature [K]')
+        ax.invert_xaxis()
+        ax.grid(False)
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
+        fig.tight_layout()
+        fig.canvas.draw()
+        assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
+        return fig
+
+    if cpu_key() != PLOT_CPU and request.config.getoption('validation_plots') is None:
+        return  # the node pressures differ between CPUs; the asserts hold
+    request.getfixturevalue('validation_plot')(figure, 'core_temperature_table_icb')
+
+
+def test_a_liquid_branch_off_the_t_table_above_the_icb_stops_the_solve(setup, monkeypatch):
+    """Above the ICB the liquid branch and the T table of a pass take one adiabat, so they agree
+    to round-off. A liquid branch 1 K warmer there (an adiabat with icb_mass 0 shifted by 1 K)
+    stops the solve with a RuntimeError at the first pass with an inner core."""
+    from zalmoxis import solver as zs
+
+    adiabat = zs.compute_adiabatic_temperature
+
+    def warm_liquid(*args, **kw):
+        t = adiabat(*args, **kw)
+        return t + 1.0 if kw.get('icb_mass') == 0.0 else t
+
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', warm_liquid)
+    with pytest.raises(RuntimeError, match='liquid branch differs from the T table'):
+        _solve(
+            setup,
+            inner=SOL,
+            core_liquidus='Anzellini13-iron',
+            surface_temperature=2500.0,
+        )
+
+
+@pytest.mark.physics_invariant
+@pytest.mark.reference_pinned
+@pytest.mark.timeout(3000)  # 5 solves, 4 of them seeded
+def test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools(setup, request):
+    """Case 4 of the ICB Validation: the freezing band of the pure-iron core of the default
+    1 M_E planet. The inner-core mass fraction does not rise with the surface temperature (to
+    0.05); the core is solid to the CMB at 2460 K and liquid at 2530 K, about 9 K outside the
+    band of 2470 K (0.991) to 2520 K (0.005) on the default side-table grid; each step passes
+    the zero-superheat test of case 1, and its ICB pressure is not below its CMB node (at
+    2460 K the CMB point of the ICB readers lies 3.0e-6 below it). Each solve after the first
+    starts from the structure of the one before (``adiabat_seed``: no Newton root, no blend
+    ramp), as a cooling sequence does; the unseeded path at 2500 K is case 1,
+    test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_melting."""
+    temps = (2460.0, 2480.0, 2500.0, 2510.0, 2530.0)
+    frac, seed = [], None
+    for t in temps:
+        res = _solve(
+            setup, inner=SOL, seed=seed, core_liquidus='Anzellini13-iron', surface_temperature=t
+        )
+        assert res['adiabat_seeded'] is (seed is not None), t
+        assert _superheat_met(res) and res['icb_converged'], (t, res['icb_superheat'])
+        assert res['core']['P_icb'] >= res['core']['P'][-1], t  # ICB not above the CMB
+        frac.append(res['core']['M_ic'] / res['cmb_mass'])
+        seed = {k: res[k] for k in ('radii', 'pressure', 'mass_enclosed')}
+    print(dict(zip(temps, frac)))
+    assert frac[0] == 1.0 and frac[-1] == 0.0
+    assert all(0.0 < f < 1.0 for f in frac[1:-1])
+    assert all(b <= a + 0.05 for a, b in zip(frac, frac[1:]))
+
+    def figure():
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=(6.8, 3.2))
+        c = plt.rcParams['axes.prop_cycle'].by_key()['color']
+        ax.plot(temps, frac, 'o-', color=c[0], ms=4, mfc='none', label='pure-iron core')
+        ax.set(xlabel='Surface temperature [K]', ylabel=r'$M_\mathrm{ic} / M_\mathrm{core}$')
+        ax.set(ylim=(-0.05, 1.05), yticks=(0.0, 0.5, 1.0))
+        ax.grid(False)
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02, 1.0), frameon=False)
+        fig.tight_layout()
+        fig.canvas.draw()
+        assert ax.get_legend().get_window_extent().x0 >= ax.get_window_extent().x1
+        return fig
+
+    if cpu_key() != PLOT_CPU and request.config.getoption('validation_plots') is None:
+        return  # the inner-core fractions differ by up to 0.006 between CPUs; the asserts hold
+    request.getfixturevalue('validation_plot')(figure, 'core_two_phase_pure_iron_freezing_band')

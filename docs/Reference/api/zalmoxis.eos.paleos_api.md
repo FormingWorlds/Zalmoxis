@@ -12,6 +12,7 @@ The PALEOS-API path is tested with the PALEOS commit `PALEOS_TESTED_SHA`. At its
         - GridSpec
         - make_grid_at_resolution
         - make_default_grid_iron
+        - make_default_grid_iron_2phase
         - make_default_grid_mgsio3
         - make_default_grid_h2o
         - PALEOS_TESTED_SHA
@@ -23,3 +24,4 @@ The PALEOS-API path is tested with the PALEOS commit `PALEOS_TESTED_SHA`. At its
         - ALLOW_DIRTY_ENV
         - generate_paleos_api_unified_table
         - generate_paleos_api_2phase_mgsio3_tables
+        - generate_paleos_api_2phase_iron_tables

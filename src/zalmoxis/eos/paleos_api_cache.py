@@ -36,6 +36,7 @@ from .paleos_api import (
     GridSpec,
     _check_paleos_once,
     build_key,
+    generate_paleos_api_2phase_iron_tables,
     generate_paleos_api_2phase_mgsio3_tables,
     generate_paleos_api_unified_table,
     paleos_installed_sha,
@@ -157,14 +158,36 @@ def resolve_paleos_api_2phase_mgsio3(
         Parallelism for the generator on cache-miss. Default ``-1`` =
         ``os.cpu_count()``.
     """
+    return _resolve_2phase('mgsio3', grid, force, n_workers)
+
+
+def resolve_paleos_api_2phase_iron(
+    grid: GridSpec,
+    *,
+    force: bool = False,
+    n_workers: int = -1,
+) -> tuple[Path, Path]:
+    """Return (solid_path, liquid_path) of the cached iron side tables.
+
+    Same pairing, header check and arguments as :func:`resolve_paleos_api_2phase_mgsio3`; the
+    files are ``2phase_iron_{solid,liquid}_<sha>_<build>_<grid>.dat``.
+    """
+    return _resolve_2phase('iron', grid, force, n_workers)
+
+
+def _resolve_2phase(
+    material: str, grid: GridSpec, force: bool, n_workers: int
+) -> tuple[Path, Path]:
+    """Cached solid and liquid side tables of ``material`` (``mgsio3`` or ``iron``), as a pair."""
     sha = paleos_installed_sha()
     _check_paleos_once(sha)
-    build = build_key('mgsio3')
+    build = build_key(material)
+    prefix = '2phase' if material == 'mgsio3' else f'2phase_{material}'
     sha_s = _sha_short(sha)
     grid_s = grid.hash_short()
 
-    solid = _cache_root() / f'2phase_solid_{sha_s}_{build}_{grid_s}.dat'
-    liquid = _cache_root() / f'2phase_liquid_{sha_s}_{build}_{grid_s}.dat'
+    solid = _cache_root() / f'{prefix}_solid_{sha_s}_{build}_{grid_s}.dat'
+    liquid = _cache_root() / f'{prefix}_liquid_{sha_s}_{build}_{grid_s}.dat'
 
     if (
         not force
@@ -176,7 +199,11 @@ def resolve_paleos_api_2phase_mgsio3(
 
     logger.info('paleos_api_cache 2-phase miss: generating %s + %s', solid, liquid)
     solid.parent.mkdir(parents=True, exist_ok=True)
-    generate_paleos_api_2phase_mgsio3_tables(
+    generator = {
+        'mgsio3': generate_paleos_api_2phase_mgsio3_tables,
+        'iron': generate_paleos_api_2phase_iron_tables,
+    }[material]
+    generator(
         out_solid=solid,
         out_liquid=liquid,
         grid=grid,
@@ -220,6 +247,11 @@ def resolve_registry_entry(material_dict: dict) -> dict:
 
     if material_dict.get('format') == 'paleos_api':
         _resolve_unified_in_place(material_dict)
+        return material_dict
+    if material_dict.get('format') == 'paleos_api_2phase_side':
+        solid, liquid = resolve_paleos_api_2phase_iron(material_dict['grid_spec'])
+        material_dict['eos_file'] = str(solid if material_dict['side'] == 'solid' else liquid)
+        material_dict['format'] = 'paleos_unified'
         return material_dict
 
     # 2-phase / Tdep layout: sub-dicts per phase.
@@ -288,9 +320,9 @@ def invalidate_cache(material: str | None = None) -> int:
         if material is not None:
             # Match on the ``_<material>_`` segment (unified) or ``2phase_*`` (all).
             tag_unified = f'unified_{material}_'
-            is_match = p.name.startswith(tag_unified)
+            is_match = p.name.startswith((tag_unified, f'2phase_{material}_'))
             if material == 'mgsio3':
-                is_match = is_match or p.name.startswith('2phase_')
+                is_match = is_match or p.name.startswith(('2phase_solid_', '2phase_liquid_'))
             if not is_match:
                 continue
         try:

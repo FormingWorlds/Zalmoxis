@@ -50,6 +50,7 @@ _BOOL_METADATA = ('converged',)
 _STR_METADATA = (
     'label',
     'core_eos',
+    'inner_core_eos',
     'mantle_eos',
     'ice_layer_eos',
     'rock_solidus_id',
@@ -80,7 +81,7 @@ def load_profile(grid_dir: str, label: str) -> Optional[dict]:
         ``'MgSiO3'``, ``'solid'``, ``'liquid'``, ``'unknown'``, ...).
         Metadata fields from the comment header are also surfaced:
         ``cmb_mass`` and ``core_mantle_mass`` as floats, ``converged``
-        as bool, and ``label`` / ``core_eos`` / ``mantle_eos`` /
+        as bool, and ``label`` / ``core_eos`` / ``inner_core_eos`` / ``mantle_eos`` /
         ``ice_layer_eos`` / ``rock_solidus_id`` / ``rock_liquidus_id``
         as strings.
 

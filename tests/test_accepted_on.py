@@ -29,6 +29,7 @@ from zalmoxis.config import load_material_dictionaries
 from zalmoxis.constants import G, earth_mass, earth_radius
 from zalmoxis.invariants import StructureInvariantError
 from zalmoxis.mixing import calculate_mixed_density, parse_all_layer_mixtures
+from zalmoxis.structure_model import is_core
 
 INPUT = os.path.join(ROOT, 'input')
 M_T = 6.0e24
@@ -560,6 +561,7 @@ class TestRealSolve:
         assert np.flatnonzero(P > 0).tolist() == [0]  # no pressure solve in the cut pass
         assert not rho[1:].any() and not m.any()
         assert r['mass_error_at_accept'] == pytest.approx(1.0)
+        assert r['core'] is None  # the cut pass does not reach the core mass
 
     @pytest.mark.usefixtures('no_check')
     def test_restored_pass_keeps_its_convergence_flags(self, monkeypatch):
@@ -1936,7 +1938,8 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
     within 1 K, apart from 2 nodes with their own bounds. The CMB anchor node reads the T(P)
     table across the jump from T_surf on the core nodes to T_cmb (within 6 K of T_cmb); the
     top node follows the adiabat within 1 K like the other nodes.
-    adiabat_self_consistency is the largest mantle difference, both nodes included."""
+    adiabat_self_consistency is the largest mantle difference, both nodes included;
+    adiabat_self_consistency_core is None, since no core adiabat is integrated."""
     from tests.test_spider_coupling_convergence import _has_paleos_data
     from tools.validation import proteus_ic_solvers as tool
 
@@ -1966,6 +1969,7 @@ def test_the_returned_mantle_temperature_is_the_adiabat_of_the_returned_pressure
     assert r['adiabat_table_blend'] == 1.0
     assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
     assert r['adiabat_self_consistency'] >= max(dT_cmb, lag[-1])
+    assert r['adiabat_self_consistency_core'] is None  # no core adiabat below a CMB anchor
 
 
 def _fake_adiabat(pressure, t_surf):
@@ -2048,22 +2052,22 @@ def _analytic_ramp(
 def test_the_solve_gives_the_table_the_masses_and_the_direction_of_its_adiabat(
     mode, monkeypatch
 ):
-    """_solve builds the T table of a pass with the enclosed masses of the structure whose
+    """_solve builds the T tables of a pass with the enclosed masses of the structure whose
     pressure it reads (the same pair of arrays as one structure integration returned), and
     marks the adiabat as integrated outward only in 'adiabatic_from_cmb', so the top shell takes
     the mixture node of that adiabat."""
-    seen, real, made = [], zs._adiabat_table, []
+    seen, real, made = [], zs._layer_tables, []
 
-    def spy(pressure, T, mass, top_shell, outward=False):
+    def spy(pressure, T, mass, cmb_mass, top_shell, outward=False):
         seen.append((np.array(pressure), np.array(mass), outward))
-        return real(pressure, T, mass, top_shell, outward)
+        return real(pressure, T, mass, cmb_mass, top_shell, outward)
 
     def structure(*args, **kwargs):
         m, g, P = _canned_structure(*args, **kwargs)
         made.append((m.copy(), P.copy()))
         return m, g, P
 
-    monkeypatch.setattr(zs, '_adiabat_table', spy)
+    monkeypatch.setattr(zs, '_layer_tables', spy)
     _analytic_ramp(structure=structure, temperature_mode=mode, max_iterations_outer=6)
     assert seen
     for P, m, outward in seen:
@@ -2153,9 +2157,16 @@ def test_the_core_bounds_read_the_core_nodes_of_the_reference_only():
 
 
 def _mantle_lag(r, adiabat):
-    """|T - adiabat| at the mantle nodes of ``r`` with a positive pressure."""
+    """|T - adiabat| at the mantle nodes (not ``is_core``) of ``r`` with a positive pressure."""
     m, P = np.asarray(r['mass_enclosed']), np.asarray(r['pressure'])
-    keep = (m >= r['cmb_mass']) & (P > 0)
+    keep = ~is_core(m, r['cmb_mass']) & (P > 0)
+    return np.abs(np.asarray(r['temperature']) - adiabat)[keep]
+
+
+def _core_lag(r, adiabat):
+    """|T - adiabat| at the core nodes of ``r`` (``is_core``) with a positive pressure."""
+    m, P = np.asarray(r['mass_enclosed']), np.asarray(r['pressure'])
+    keep = is_core(m, r['cmb_mass']) & (P > 0)
     return np.abs(np.asarray(r['temperature']) - adiabat)[keep]
 
 
@@ -2164,18 +2175,20 @@ def test_the_accept_waits_for_a_table_built_on_a_full_adiabat_pass():
     """Every pass on the target mass: the first pass at blend 1 reads the T table built on the
     pressure of the blend-0.75 pass, so the solve accepts the next pass, whose table comes
     from a pass at blend 1. The adiabat is computed for the 5 passes of the ramp and once
-    more on the returned structure, for adiabat_self_consistency. The pressure drifts from
-    pass to pass, so the returned T, read from the table of the pass before, lags that
-    adiabat."""
+    more on the returned structure, for adiabat_self_consistency and
+    adiabat_self_consistency_core. The pressure drifts from pass to pass, so the returned T,
+    read from the table of the pass before, lags that adiabat in the mantle and in the core."""
     r, n_adiabat = _analytic_ramp(
         linear=1.0, factor=1.0, drift=1e-4, tolerance_outer=1e-3, wall_timeout=WALL
     )
     assert n_adiabat == 6
     assert r['converged'] is True and r['accepted_on'] == 'strict'
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
-    lag = _mantle_lag(r, _fake_adiabat(r['pressure'], _cfg()['surface_temperature']))
-    assert lag.max() > 0.0
+    adiabat = _fake_adiabat(r['pressure'], _cfg()['surface_temperature'])
+    lag, core = _mantle_lag(r, adiabat), _core_lag(r, adiabat)
+    assert lag.max() > 0.0 and core.size >= 2 and core.max() > 0.0
     assert r['adiabat_self_consistency'] == pytest.approx(lag.max(), rel=1e-12)
+    assert r['adiabat_self_consistency_core'] == pytest.approx(core.max(), rel=1e-12)
 
 
 @pytest.mark.smoke
@@ -2192,12 +2205,13 @@ def test_an_iteration_cap_on_the_first_full_adiabat_pass_is_not_accepted():
 @pytest.mark.smoke
 def test_a_pass_below_blend_1_reports_no_self_consistency():
     """The iteration cap ends the solve on the blend-0.75 pass, on the target mass: its T is
-    not the adiabat, so adiabat_self_consistency is None."""
+    not the adiabat, so adiabat_self_consistency and adiabat_self_consistency_core are None."""
     r, _ = _analytic_ramp(
         linear=1.0, factor=1.0, tolerance_outer=1e-3, max_iterations_outer=4, wall_timeout=WALL
     )
     assert r['converged'] is False and r['adiabat_blend'] == 0.75
     assert np.all(np.asarray(r['pressure']) > 0) and r['adiabat_self_consistency'] is None
+    assert r['adiabat_self_consistency_core'] is None
 
 
 @pytest.mark.smoke
@@ -2317,8 +2331,9 @@ def _power_mass(R, k):
 def test_the_secant_tail_reaches_the_mass_in_3_full_adiabat_passes():
     """A ramp started by main (``_secant_tail``) on a mass that grows as R^0.9: the passes on a
     full-adiabat table reach tolerance_outer 1e-4 in 3 passes (the cube-root update alone
-    takes 13 on this mass) and the solve accepts the full adiabat. The adiabat is computed
-    on the 4 blend passes, on each full-table pass and once on the returned structure."""
+    takes 13 on this mass) and the solve accepts the full adiabat one pass later, on a settled
+    table. The adiabat is computed on the 4 blend passes, on each full-table pass and once on
+    the returned structure."""
     r, n_adiabat = _analytic_ramp(
         mass=_power_mass,
         tolerance_outer=1e-4,
@@ -2329,7 +2344,7 @@ def test_the_secant_tail_reaches_the_mass_in_3_full_adiabat_passes():
     )
     assert r['converged'] is True and r['accepted_on'] == 'strict'
     assert (r['adiabat_blend'], r['adiabat_table_blend']) == (1.0, 1.0)
-    assert n_adiabat - 5 <= 3 and r['mass_error_at_accept'] < 1e-4
+    assert n_adiabat - 5 == 4 and r['mass_error_at_accept'] < 1e-4  # 3 to the mass, 1 to settle
     R_star = R_ROOT * (1.0 - 0.012) ** (-1.0 / 0.9)  # the root at blend 1
     assert r['radii'][-1] == pytest.approx(R_star, rel=1e-4 / 0.9 * 1.01)
 
@@ -2771,12 +2786,12 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     the unseeded re-solve differ by at most 2.5 K at the 39 mass points and at the top node,
     and 5e-4 in radius. In all 3 solves the mass-weighted mean core temperature stays within
     10 K of REF, the last core node within 700 K (it reads the edge of the mantle T(P) table)
-    and the other core nodes within 1 K. The secant tail needs at most 3 passes on a full-adiabat table, and
-    the seeded re-solve at most 4 passes and at most half the structure integrations of the
-    unseeded one. With
-    ``--validation-plots`` it writes the plot of the mass error per pass; the pass count can
-    change with round-off, so a run without the option does not compare it with the committed
-    plot. See ``docs/Validation/hydrostatic_structure.md``."""
+    and the other core nodes within 1 K. The secant tail needs at most 4 passes on a
+    full-adiabat table, and the seeded re-solve at most 5 passes and at most half the structure
+    integrations of the unseeded one; 1 pass of each waits for a table of a converged pass.
+    With ``--validation-plots`` it writes the plot of the mass error per pass; the pass count
+    can change with round-off, so a run without the option does not compare it with the
+    committed plot. See ``docs/Validation/hydrostatic_structure.md``."""
     _need_paleos()
     first, p1, _, lag1 = _grid_main(GRID_CMF95)
     stored = grid_ref.load()
@@ -2790,8 +2805,9 @@ def test_the_secant_tail_and_the_seed_keep_the_converged_adiabat_of_the_grid_sta
     seeded, p2, n_seeded, lag2 = _grid_main(resolve, adiabat_seed=seed, **warm)
     plain, p3, n_plain, lag3 = _grid_main(resolve, **warm)
     _assert_grid_bounds(first, seeded, plain, stored, (lag1, lag2, lag3))
-    assert len(p1) - 5 <= 3  # linear pass, 4 blend passes, then the full-adiabat passes
-    assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
+    # linear pass, 4 blend passes, then the full-adiabat passes (1 waits for a settled table)
+    assert len(p1) - 5 <= 4
+    assert len(p2) <= 5 and n_seeded <= 0.5 * n_plain
 
     def figure():
         return _ramp_figure(
@@ -2816,7 +2832,7 @@ def test_the_seed_keeps_the_converged_adiabat_of_the_grid_start_up_on_the_jax_pa
     blocks of the stored REF, with the REF bounds of ``_assert_grid_bounds`` on the first
     solve and the seeded re-solve (no pass bound on the first solve); the re-solve without
     the seed is compared with the seeded one (2.5 K, 5e-4 in radius), and the seeded
-    re-solve takes at most 4 passes and at most half the structure integrations of the
+    re-solve takes at most 5 passes and at most half the structure integrations of the
     unseeded one."""
     _need_paleos()
     stored = grid_ref.load()
@@ -2831,7 +2847,7 @@ def test_the_seed_keeps_the_converged_adiabat_of_the_grid_start_up_on_the_jax_pa
     seeded, p2, n_seeded, lag2 = _grid_main(resolve, adiabat_seed=seed, **warm)
     plain, _, n_plain, lag3 = _grid_main(resolve, **warm)
     _assert_grid_bounds(first, seeded, plain, stored, (lag1, lag2, lag3), jax=True)
-    assert len(p2) <= 4 and n_seeded <= 0.5 * n_plain
+    assert len(p2) <= 5 and n_seeded <= 0.5 * n_plain
 
 
 @pytest.mark.slow

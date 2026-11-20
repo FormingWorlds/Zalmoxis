@@ -23,10 +23,13 @@ import numpy as np
 from scipy.optimize import brentq
 
 from .config import (
+    CORE_LAYERS,
     PALEOS_MAX_MASS_EARTH,
     PALEOS_UNIFIED_MAX_MASS_EARTH,
     RTPRESS100TPA_MAX_MASS_EARTH,
     WOLFBOWER2018_MAX_MASS_EARTH,
+    _check_icb_rule,
+    _check_two_layer_core,
     band_limit,
 )
 from .constants import (
@@ -37,14 +40,23 @@ from .constants import (
     earth_mass,
     earth_radius,
 )
+from .core_profile import (
+    core_arrays,
+    icb_from_profile,
+    icb_misses,
+    icb_superheat,
+    outside_side_tables,
+)
 from .eos import (
     calculate_temperature_profile,
     compute_adiabatic_temperature,
     create_pressure_density_files,
 )
+from .eos.core_alloy import IRON_SIDES, is_alloy_mixture
 from .eos.seager import _band_debug_seen
-from .eos.temperature import ADIABAT_P_FLOOR
+from .eos.temperature import ADIABAT_P_FLOOR, cmb_point_temperature
 from .invariants import StructureInvariantError, check_accepted
+from .melting_curves import get_melting_curve_function
 from .mixing import (
     _PALEOS_2PHASE_NAMES,
     _PALEOS_UNIFIED_NAMES,
@@ -58,7 +70,15 @@ from .mixing import (
     split_mantle_volatile_inventory,
     strong_partition_phi_floor,
 )
-from .structure_model import get_layer_mixture, solve_structure, temperature_from_arrays
+from .structure_model import (
+    check_core_temperature_arrays,
+    core_temperature,
+    coupled_odes,
+    get_layer_mixture,
+    is_core,
+    solve_structure,
+    temperature_from_arrays,
+)
 
 logger = logging.getLogger('fwl.' + __name__)
 
@@ -344,8 +364,67 @@ _SECANT_CLAMP = 0.02
 _SECANT_FLOOR = 2.0
 _SEED_KEYS = ('radii', 'pressure', 'mass_enclosed')
 _SEED_TABLE_BLEND = -1.0  # adiabat_table_blend of a pass whose T table comes from adiabat_seed
+_ICB_SUPERHEAT_TOL = 0.5  # bound [K] of the zero-superheat ICB test on an adiabat
+_CORE_T_MAX_EXCESS = 0.1  # core nodes beyond core_temperature_arrays, as a part of its range
+_LIQUID_BRANCH_RTOL = 1e-12  # liquid branch against the T table above the ICB
 # T table pressures over the top cell (the shell), see _adiabat_table
 _TOP_SHELL_POINTS = 64
+
+
+def _table_end(lp, ts, top=True):
+    """T [K] past one end of a T(P) table (log10 P [Pa], T [K]): the adiabat of its end
+    interval, log10 T linear in log10 P with the slope of that interval, so a query past the
+    pressures of the pass that built the table reads the adiabat there instead of a constant T.
+    A table of 1 point, or with a flat end interval, holds its end T."""
+    i, j = (-1, -2) if top else (0, 1)
+    if len(lp) < 2 or not abs(lp[i] - lp[j]) > 0:
+        return lambda x: float(ts[i])
+    s = math.log10(ts[i] / ts[j]) / (lp[i] - lp[j])
+    return lambda x: float(ts[i] * 10.0 ** (s * (x - lp[i])))
+
+
+def _table_lookup(lp, ts, low=False):
+    """T [K] at P [Pa] of a T(P) table (log10 P [Pa] ascending, T [K]): linear in log10 P
+    inside it, the adiabat of the end interval (``_table_end``) past its top and, with
+    ``low``, past its bottom (else its bottom T); capped at 1e5 K (the PALEOS table maximum),
+    floored at 100 K."""
+    top, bottom = _table_end(lp, ts), _table_end(lp, ts, top=False)
+
+    def t_adi(P):
+        x = math.log10(P)  # math.log10 avoids numpy scalar dispatch
+        if x > lp[-1]:
+            T = top(x)
+        elif low and x < lp[0]:
+            T = bottom(x)
+        else:
+            T = float(np.interp(x, lp, ts))
+        return max(100.0, min(T, 100000.0))
+
+    return t_adi
+
+
+def _layer_lags(T, adiabat, mass, pressure, cmb_mass):
+    """Largest |T - adiabat| [K] over the mantle nodes and over the core nodes (``is_core``)
+    with a positive pressure, each None for a layer without such a node; NaN propagates."""
+    lag = np.abs(np.asarray(T, dtype=float) - np.asarray(adiabat, dtype=float))
+    up, core = np.asarray(pressure) > 0, is_core(np.asarray(mass), cmb_mass)
+    return tuple(float(lag[k].max()) if k.any() else None for k in (~core & up, core & up))
+
+
+def _layer_tables(pressure, T, mass, cmb_mass, top_shell, outward=False):
+    """The T(P) table of the adiabat ``T`` on a pass (``_adiabat_table``) split at its CMB into
+    the table of the mantle nodes and that of the core nodes (``is_core``), so that a query
+    reads the adiabat of its own layer also where the CMB of the querying pass lies at another
+    pressure. The core part is None when either layer holds fewer than 2 nodes; the mantle part
+    is then the table of all nodes."""
+    pressure, T, mass = (np.asarray(a, dtype=float) for a in (pressure, T, mass))
+    in_core = is_core(mass, cmb_mass)
+    core = in_core & (pressure > 0)
+    if core.sum() < 2 or (~in_core).sum() < 2:
+        return _adiabat_table(pressure, T, mass, top_shell, outward), None
+    s = np.argsort(pressure[core])
+    mantle = _adiabat_table(pressure[~in_core], T[~in_core], mass[~in_core], top_shell, outward)
+    return mantle, (np.log10(pressure[core][s]), T[core][s])
 
 
 def _adiabat_table(pressure, T, mass, top_shell, outward=False):
@@ -548,6 +627,98 @@ def _short_of_adiabat(result, asked):
     return bool(asked and not full)
 
 
+# the accept keys of a result that the full-adiabat rule, the ICB tests or the core-table
+# range test refuses after the mass test (the table band check keeps accepted_on)
+_REFUSED = {
+    'converged': False,
+    'converged_mass': False,
+    'accepted_on': None,
+    'accept_mass_limit': None,
+}
+
+
+def _cmb_point_rule(core_table, t_func, radii, mass, cmb_mass, core_nabla, ramp_asked=False):
+    """T rule of the CMB point of the ICB readers (``core_profile.icb_from_profile``), from the
+    core side of the T source of a pass: the caller core table; on the full adiabat (``t_func``
+    with ``full`` set) the core gradient ``core_nabla(P, T)`` stepped from the last core node
+    (``cmb_point_temperature``); None before the full adiabat of a solve that computes its own
+    adiabat (``ramp_asked``: the linear first guess and the blend ramp) or without a T function;
+    else ``t_func`` at the CMB radius, with r^3 linear in the enclosed mass (a T function with a
+    step at the CMB radius can then return either side)."""
+    if core_table is not None:
+        return lambda p, *_: float(core_temperature(p, core_table))
+    if getattr(t_func, 'full', False):
+        return cmb_point_temperature(core_nabla)
+    if ramp_asked or t_func is None:
+        return None
+    r_cmb = float(np.interp(cmb_mass, mass, np.asarray(radii) ** 3)) ** (1.0 / 3.0)
+    return lambda p, *_: float(t_func(r_cmb, p))
+
+
+def _check_full_adiabat_accept(converged, ramp_asked, t_func):
+    """Raise ``StructureInvariantError`` for an accepted pass of a solve that computes its
+    adiabat when its T function ``t_func`` is not the full adiabat (``full``), from which its
+    ICB readers take the CMB point."""
+    if converged and ramp_asked and not getattr(t_func, 'full', False):
+        raise StructureInvariantError(
+            'the accepted pass is not on the full adiabat (blend 1), so its ICB readers took '
+            'the CMB point from the interpolation, not the core step'
+        )
+
+
+def _check_core_table(result, table, used, mantle_T):
+    """Add ``core_T_used``, ``core_T_nodes_outside`` and ``core_T_max_excess`` (``main``) to
+    ``result`` when a core table ``table`` is given; an unused table counts no node. With
+    ``used``, an accepted result raises StructureInvariantError at a core node of T <= 0 or
+    a node off its source (table(P) in the core, ``mantle_T(r, P)`` above), and is no longer
+    accepted when a core node lies more than ``_CORE_T_MAX_EXCESS`` of the table range
+    beyond it."""
+    if table is None or 'mass_enclosed' not in result:
+        return result
+    p = np.asarray(result['pressure'], dtype=float)
+    core = is_core(np.asarray(result['mass_enclosed']), result['cmb_mass'])
+    lo, hi = table[0][0], table[0][-1]
+    beyond = np.maximum(np.maximum(lo - p[core], p[core] - hi), 0.0) if used else np.zeros(0)
+    result['core_T_used'] = used
+    result['core_T_nodes_outside'] = int(np.count_nonzero(beyond))
+    result['core_T_max_excess'] = excess = float(beyond.max(initial=0.0) / (hi - lo))
+    if result['core_T_nodes_outside']:
+        logger.warning(
+            '%d core nodes lie outside the pressures of core_temperature_arrays, up to %.3g '
+            'of its range beyond it.',
+            result['core_T_nodes_outside'],
+            excess,
+        )
+    if not used or result.get('accepted_on') is None:
+        return result
+    t = np.asarray(result['temperature'], dtype=float)
+    cold = core & (p < lo) & (t <= 0.0)  # only the extension below the table goes cold
+    if cold.any():
+        k = int(np.argmax(cold))
+        raise StructureInvariantError(
+            f'core_temperature_arrays gives T = {t[k]:.4g} K at the core node of P = '
+            f'{p[k]:.4g} Pa, below the table range [{lo:.4g}, {hi:.4g}] Pa, by its end-slope '
+            'extension'
+        )
+    mantle = [mantle_T(r_, p_) for r_, p_ in zip(result['radii'], p)]
+    want = np.where(core, core_temperature(p, table), mantle)
+    for name, sel in (('core', core), ('mantle', ~core)):
+        if not np.allclose(t[sel], want[sel], rtol=1e-9, atol=0.0):
+            raise StructureInvariantError(
+                f'a {name} node of the accepted result misses its temperature source by '
+                f'{np.max(np.abs(t[sel] / want[sel] - 1.0)):.3g} (relative)'
+            )
+    if excess > _CORE_T_MAX_EXCESS:
+        logger.warning(
+            'Not accepted: core nodes lie up to %.3g of the range of core_temperature_arrays '
+            'beyond it (limit %.3g); check the table and its units (P in Pa, T in K).',
+            excess,
+            _CORE_T_MAX_EXCESS,
+        )
+        result.update(_REFUSED)
+    return result
+
+
 def _check_accepted(
     result,
     run_params,
@@ -587,7 +758,13 @@ def _check_accepted(
         return calculate_mixed_density_batch(P, T, *args, volatile_profile=vp)
 
     result['integration_tolerances'] = (rtol, atol)
-    check_accepted(result, config_params, rtol, atol, density_at, 'ice_layer' in mixes)
+
+    def box_at(P, T, layer):
+        return outside_side_tables(
+            P, T, mixes[layer], material_dictionaries, _interpolation_cache
+        )
+
+    check_accepted(result, config_params, rtol, atol, density_at, 'ice_layer' in mixes, box_at)
     if result.get('padded'):
         logger.warning(
             'The accepted profile ends in a surface stop: P = 0 at the outer radius instead '
@@ -678,8 +855,10 @@ def _report_table_bands(
         cmb = max(1, min(int(np.searchsorted(m, result['cmb_mass'])), len(P) - 1))
         step = (inner > ADIABAT_P_FLOOR) & (outer < np.inf)  # a NaN or inf end is not stepped
         grad[:-1] = mantle[1:] & step & (np.arange(1, len(P)) > cmb)
-    else:
-        grad[1:] = mantle[:-1] & (inner >= ADIABAT_P_FLOOR) & (outer >= ADIABAT_P_FLOOR)
+    else:  # the segment across the CMB also reads the mantle node above it
+        core = m < result['cmb_mass'] * (1.0 - rtol)
+        span = (inner >= ADIABAT_P_FLOOR) & (outer >= ADIABAT_P_FLOOR)
+        grad[1:] = (mantle[:-1] | (core[:-1] & mantle[1:])) & span
     bad = mantle & ~(np.isfinite(P) & np.isfinite(T))
     reads = {
         'solid': mantle & (undefined | (T <= t_sol) | (T < t_liq)),
@@ -724,6 +903,7 @@ def main(
     initial_density=None,
     initial_radii=None,
     adiabat_seed=None,
+    core_temperature_arrays=None,
 ):
     """Run the exoplanet internal structure model with automatic retry.
 
@@ -786,6 +966,22 @@ def main(
         converge or raises StructureSolveError is repeated without the seed, and its time
         counts in ``total_time``. A seeded result has no ``newton_*`` keys. Ignored with an
         external temperature.
+    core_temperature_arrays : tuple[ndarray, ndarray] or None, optional
+        Core temperature table ``(P_arr, T_arr)``: pressures [Pa], finite, positive and
+        strictly increasing, and temperatures [K], finite, positive and not falling with P; 2
+        one-dimensional arrays of equal length >= 2 (else ValueError). Every core node and core ODE evaluation
+        (enclosed mass below ``cmb_mass``, outer and inner core) takes T(P) from the table,
+        linear in P and extended with the end slopes outside it; the mantle keeps
+        ``temperature_function``, or ``temperature_arrays`` with ``use_jax``, one of which must
+        be given (else ValueError). A core without a T-dependent EOS ignores the table (one
+        INFO line). The result then holds ``core_T_used`` (True when the table set the core
+        T), ``core_T_nodes_outside`` (core nodes with P outside the table) and
+        ``core_T_max_excess`` (their largest distance beyond the table as a fraction of
+        ``P_arr[-1] - P_arr[0]``, 0.0 for none; a WARNING when above 0). Above 0.1 the result
+        is not accepted (``converged`` False, ``accepted_on`` None). An accepted result with a
+        core node at T <= 0, or a node off its source by more than a relative 1e-9, raises
+        StructureInvariantError. With a table, ``core_liquidus`` and ``temperature_mode =
+        'adiabatic_from_cmb'`` are accepted together.
 
     Returns
     -------
@@ -798,9 +994,17 @@ def main(
         of the returned profile. 'timeout' replaces the other labels when the wall
         clock stopped the solve of the returned profile. In an adiabatic mode with a
         T-dependent EOS and no external temperature only the full adiabat on a table of a
-        full-adiabat pass (``adiabat_blend`` and ``adiabat_table_blend`` 1) is accepted, and
+        full-adiabat pass (``adiabat_blend`` and ``adiabat_table_blend`` 1) is accepted, on its
+        strict test only when the pass that built the table was itself within
+        ``tolerance_outer`` in mass; the table is read by layer (the core part at core masses)
+        and continued past its high-pressure end with the adiabat slope of its end interval,
+        the core part also past its low-pressure end, while the mantle part holds its
+        low-pressure end T; and
         ``adiabat_self_consistency`` gives the largest difference in K between the returned
-        mantle T and the adiabat recomputed on the returned structure (None below blend 1);
+        mantle T and the adiabat recomputed on the returned structure (None below blend 1),
+        and ``adiabat_self_consistency_core`` the same at the core nodes, whose T comes from
+        the T table of the pass before (None with ``temperature_mode = 'adiabatic_from_cmb'``,
+        which integrates no core adiabat);
         a Newton root there seeds the Picard blend ramp at min(tolerance_outer, newton_tol),
         and the result keeps its ``newton_*`` keys and its time in ``total_time``. In a ramp
         that main starts (after a Newton root or from ``adiabat_seed``), a pass on a
@@ -815,7 +1019,12 @@ def main(
         check used; an unconverged result has none. ``padded`` (bool) is True when
         the pressure at the outer radius is 0: the integration stopped at P = 0 before
         the outer radius, and the nodes past the stop hold P = 0. ``main`` logs one
-        warning when it returns a converged padded result.
+        warning when it returns a converged padded result. With ``core_liquidus``,
+        ``icb_converged`` is True when the returned pass meets the ICB tests;
+        ``icb_superheat`` [K] is the superheat S of the outer-core liquid at the ICB on an
+        adiabat (at the centre with no inner core, at the core mass with a full one; None
+        on a given profile), and ``icb_adiabat`` [kg] the inner-core mass that the adiabat of
+        the returned pass took (None without an adiabat).
 
     Raises
     ------
@@ -872,10 +1081,36 @@ def main(
                 ', '.join(_trigger),
             )
     band_limit(config_params)  # a bad limit fails before the solve, not after it
+    table = mantle_T = None
+    if core_temperature_arrays is not None:
+        core_temperature_arrays = table = check_core_temperature_arrays(core_temperature_arrays)
+        jax_arrays = config_params.get('use_jax', False) and temperature_arrays is not None
+        mantle_T = (
+            temperature_from_arrays(temperature_arrays) if jax_arrays else temperature_function
+        )
+        if mantle_T is None:
+            raise ValueError(
+                'core_temperature_arrays needs a mantle temperature: temperature_function, or '
+                'temperature_arrays with use_jax'
+            )
+        mixes = layer_mixtures or parse_all_layer_mixtures(config_params['layer_eos_config'])
+        if not any_component_is_tdep({k: v for k, v in mixes.items() if k in CORE_LAYERS}):
+            logger.info('The core EOS reads no temperature; core_temperature_arrays is unused.')
+            core_temperature_arrays = None
+    # the layer and ICB checks also for callers that skip validate_config
+    _check_two_layer_core(config_params['layer_eos_config'])
+    _check_icb_rule(config_params, core_table=table is not None)
     bands = (config_params, material_dictionaries, melting_curves_functions, layer_mixtures)
     asked = _adiabat_asked(
         config_params, layer_mixtures, temperature_function, temperature_arrays
     )
+    if asked and 'ice_layer' in config_params['layer_eos_config']:
+        logger.warning(
+            'The boundary between the mantle and the ice layer is not cut: the adiabat gives '
+            'its node segment the mixture of the node it fills, which moves the temperature of '
+            'the nodes below it (known limit: docs/Explanations/adiabat_integration.md, The '
+            'uncut boundary of an ice layer).'
+        )
     newton_keys, newton_time, seed_time, result = {}, 0.0, 0.0, None
     seed = (
         _adiabat_seed(adiabat_seed, config_params)
@@ -901,6 +1136,7 @@ def main(
                 volatile_profile=volatile_profile,
                 temperature_function=temperature_function,
                 temperature_arrays=temperature_arrays,
+                core_temperature_arrays=core_temperature_arrays,
                 p_center_hint=float(seed['pressure'][0])
                 if p_center_hint is None
                 else p_center_hint,
@@ -925,6 +1161,7 @@ def main(
             volatile_profile=volatile_profile,
             temperature_function=temperature_function,
             temperature_arrays=temperature_arrays,
+            core_temperature_arrays=core_temperature_arrays,
             p_center_hint=p_center_hint,
             initial_density=initial_density,
             initial_radii=initial_radii,
@@ -933,6 +1170,9 @@ def main(
             result = _report_table_bands(result, *bands)
             if seed_time:
                 result['total_time'] += seed_time
+            result = _check_core_table(
+                result, table, core_temperature_arrays is not None, mantle_T
+            )
             return _check_accepted(result, config_params, *bands, volatile_profile, asked)
         # the Newton root holds the linear first guess; the blend ramp from it makes the adiabat
         logger.info(
@@ -962,6 +1202,7 @@ def main(
             volatile_profile=volatile_profile,
             temperature_function=temperature_function,
             temperature_arrays=temperature_arrays,
+            core_temperature_arrays=core_temperature_arrays,
             p_center_hint=p_center_hint,
             initial_density=initial_density,
             initial_radii=initial_radii,
@@ -975,6 +1216,7 @@ def main(
     run_params = config_params  # the parameters of the solve that returns
     _retry_skipped = (
         not result['converged']
+        and result.get('icb_converged', True)
         and result.get('converged_density', False)
         and result.get('converged_pressure', False)
         and _first_mass_err is not None
@@ -1043,12 +1285,13 @@ def main(
             volatile_profile=volatile_profile,
             temperature_function=temperature_function,
             temperature_arrays=temperature_arrays,
+            core_temperature_arrays=core_temperature_arrays,
             p_center_hint=p_center_hint,
             initial_density=retry_density,
             initial_radii=retry_radii,
         )
 
-        if not result['converged']:  # pragma: no cover - retry also failed; defensive
+        if not result['converged']:  # the retry also failed
             logger.warning(
                 'Structure solve did not converge after retry. '
                 'Returning best result with converged=False.'
@@ -1057,6 +1300,7 @@ def main(
     result = _report_table_bands(result, *bands)
     if newton_keys or seed_time:
         result.update(newton_keys, total_time=result['total_time'] + newton_time + seed_time)
+    result = _check_core_table(result, table, core_temperature_arrays is not None, mantle_T)
     return _check_accepted(result, run_params, *bands, volatile_profile, asked)
 
 
@@ -1347,6 +1591,7 @@ def _solve_newton_outer(
     volatile_profile=None,
     temperature_function=None,
     temperature_arrays=None,
+    core_temperature_arrays=None,
     p_center_hint=None,
     initial_density=None,
     initial_radii=None,
@@ -1473,6 +1718,7 @@ def _solve_newton_outer(
             volatile_profile=volatile_profile,
             temperature_function=temperature_function,
             temperature_arrays=temperature_arrays,
+            core_temperature_arrays=core_temperature_arrays,
             p_center_hint=p_center_hint,
             initial_density=density_seed if density_seed is not None else initial_density,
             initial_radii=radii_seed if radii_seed is not None else initial_radii,
@@ -1769,6 +2015,7 @@ def _solve(
     volatile_profile=None,
     temperature_function=None,
     temperature_arrays=None,
+    core_temperature_arrays=None,
     p_center_hint=None,
     initial_density=None,
     initial_radii=None,
@@ -1938,7 +2185,7 @@ def _solve(
                     'The Chabrier H table extends to 10^22 Pa but '
                     'has only been validated up to ~50 M_earth.'
                 )
-            elif eos_name in _PALEOS_UNIFIED_NAMES:
+            elif eos_name in _PALEOS_UNIFIED_NAMES or eos_name in IRON_SIDES:
                 max_mass = PALEOS_UNIFIED_MAX_MASS_EARTH
                 reason = 'The unified PALEOS tables extend to 100 TPa (P: 1 bar to 100 TPa).'
             else:
@@ -1960,6 +2207,27 @@ def _solve(
     # The layer boundaries of every pass and of the returned profile
     cmb_mass = core_mass_fraction * planet_mass
     core_mantle_mass = (core_mass_fraction + mantle_mass_fraction) * planet_mass
+    # Inner core: a given mass, or the liquidus rule on the profile of the previous pass
+    two_layer = 'inner_core' in layer_mixtures
+    core_liq = (config_params.get('core_liquidus') or None) if two_layer else None
+    if isinstance(core_liq, str):
+        if is_alloy_mixture(layer_mixtures['core']):
+            logger.warning(
+                'core_liquidus %s is a pure-iron curve; an alloy outer core can melt below it, '
+                'so the inner core can come out too large: pass the alloy liquidus as a '
+                'callable',
+                core_liq,
+            )
+        core_liq = get_melting_curve_function(core_liq)
+    if core_liq is not None and not (
+        uses_Tdep or arrays_give_T or temperature_function is not None
+    ):
+        raise ValueError(
+            'core_liquidus needs a core temperature: no layer has a T-dependent EOS and no '
+            'temperature function is given; use inner_core_mass_fraction'
+        )
+    icb_frac = config_params.get('inner_core_mass_fraction')
+    icb_mass = float(icb_frac) * cmb_mass if two_layer and icb_frac is not None else 0.0
 
     logger.log(
         progress,
@@ -2004,12 +2272,49 @@ def _solve(
     prev_radii = None
     prev_pressure = None
     prev_mass_enclosed = None
+    _temperature_func = None
+
+    def _T_at(f, r, p, m):
+        # T [K] of the T function f at a node of enclosed mass m: its core table in the core
+        core = getattr(f, 'core', None)
+        return core(r, p) if core is not None and is_core(m, cmb_mass) else f(r, p)
+
+    def _node_T(r, p, m):
+        # node T [K]: the core table at core nodes, the T function elsewhere
+        t = np.array([_T_at(_temperature_func, *x) for x in zip(r, p, m)])
+        if core_temperature_arrays is not None:
+            core = is_core(m, cmb_mass)
+            t[core] = core_temperature(p[core], core_temperature_arrays)
+        return t
+
+    def _core_nabla(P, T):
+        # nabla_ad of the outer core, as the adiabat reads it
+        return get_mixed_nabla_ad(
+            P,
+            T,
+            layer_mixtures['core'],
+            material_dictionaries,
+            interpolation_cache,
+            solidus_func,
+            liquidus_func,
+            mushy_zone_factors,
+            condensed_rho_min,
+            condensed_rho_scale,
+            binodal_T_scale,
+        )
+
+    def _cmb_T(r, m):
+        # T rule of the CMB point of the ICB readers on the profile (r, m) of this pass
+        return _cmb_point_rule(
+            core_temperature_arrays, _temperature_func, r, m, cmb_mass, _core_nabla, ramp_asked
+        )
 
     # Adiabat blending state.
     _using_adiabat = False
     _adiabat_computed = False  # the gradient table was read for the T profile
     _adiabat_blend = 0.0
     _table_blend = 0.0  # the blend of the pass whose pressure built the T(P) table
+    _pass_err = _table_err = math.inf  # mass error of the last pass, of the table's pass
     _ADIABAT_BLEND_STEP = 0.25
     # the internal adiabat makes T: accept only blend 1 on a table of a blend-1 pass
     ramp_asked = _adiabat_asked(
@@ -2024,9 +2329,9 @@ def _solve(
     _secant_prev = None  # (radius, mass) of the last pass on a full-adiabat table
     _secant_err = None  # mass error of the pass whose radius came from a secant step
 
-    def _adiabat(radii, pressure, mass_enclosed, top=None):
+    def _adiabat(radii, pressure, mass_enclosed, top=None, icb=None):
         # 'adiabatic_from_cmb' anchors at the CMB and integrates outward, 'adiabatic' and a
-        # given outer-node T ``top`` inward
+        # given outer-node T ``top`` inward; ``icb`` replaces the inner-core mass
         return compute_adiabatic_temperature(
             radii,
             pressure,
@@ -2047,10 +2352,26 @@ def _solve(
             if top is None and temperature_mode == 'adiabatic_from_cmb'
             else 'surface',
             cmb_temperature=cmb_temperature,
+            icb_mass=icb_mass if icb is None else icb,
         )
 
     def _top_shell(q, T_top, m):
         return _shell_adiabat(_adiabat, q, T_top, m)
+
+    def _icb_misses(r, m, p, t):
+        # (miss, bound) of the ICB tests: the superheat miss [K] of the liquid branch on an
+        # adiabat, else the distance [kg] to the liquidus root; the adiabat ICB lag [kg]; and S
+        tol = tolerance_outer * cmb_mass
+        liquid = getattr(_temperature_func, 'liquid', None)
+        if liquid is None:
+            root, lag = icb_misses(
+                m, p, t, cmb_mass, core_liq, icb_mass, icb_adiabat, _cmb_T(r, m)
+            )
+            return (root, tol), (lag, tol), None
+        liquid_t = [_T_at(liquid, *x) for x in zip(r, p, m)]
+        s, heat = icb_superheat(m, p, liquid_t, cmb_mass, core_liq, icb_mass, _cmb_T(r, m))
+        lag = 0.0 if icb_adiabat is None else abs(icb_adiabat - icb_mass)
+        return (heat, _ICB_SUPERHEAT_TOL), (lag, tol), s
 
     # For adiabatic mode, cap the initial center_temperature guess to
     # prevent the linear-T initial profile from being far above the
@@ -2085,6 +2406,7 @@ def _solve(
     mass_limit = tolerance_outer  # the mass test behind converged_mass
     restore_best = False  # an outer stop returns the best pass
     rho_eos = None  # rho_EOS(P, T) at the nodes of the current pressure profile
+    icb_adiabat = None  # the inner-core mass that the adiabat of the current pass took
 
     # Initialize arrays to safe defaults. These are overwritten on the
     # first outer iteration, but must exist in case the wall-clock timeout
@@ -2102,6 +2424,7 @@ def _solve(
         # a previous outer iteration masking failure in the current one).
         converged_pressure = False
         converged_density = False
+        icb_adiabat = None
 
         # Wall-clock timeout check
         if time.time() - wall_start > wall_timeout:
@@ -2194,6 +2517,7 @@ def _solve(
             if _using_adiabat and prev_pressure is not None:
                 # Bump blend toward full adiabat; the table is built on the previous pass
                 _table_blend = _SEED_TABLE_BLEND if _seed_table else _adiabat_blend
+                _table_err = math.inf if _seed_table else _pass_err
                 _seed_table = False
                 _adiabat_blend = min(1.0, _adiabat_blend + _ADIABAT_BLEND_STEP)
                 logger.debug(
@@ -2204,58 +2528,69 @@ def _solve(
 
                 # Recompute the adiabat on the previous pass's converged structure
                 _adiabat_computed = True
+                icb_adiabat = icb_mass
                 adiabat_T = _adiabat(prev_radii, prev_pressure, prev_mass_enclosed)
 
-                # Build T(P) interpolator from the previous iteration's
-                # pressure profile.  This ensures that during the Brent
-                # bracket search, the adiabatic temperature tracks the
-                # ODE's actual pressure rather than a fixed radial mapping.
-                # This prevents unphysical (low P, high T) queries that
-                # hit NaN gaps in the PALEOS tables.
-                _logP_sorted, _T_sorted = _adiabat_table(
-                    prev_pressure,
-                    adiabat_T,
-                    prev_mass_enclosed,
-                    _top_shell,
-                    temperature_mode == 'adiabatic_from_cmb',
-                )
+                # T(P) tables of the previous pass: the Brent search reads the T of its own P,
+                # not of a fixed radius (no low-P, high-T queries into PALEOS NaN gaps)
+                def _table_t(lp, ts, low=False, _b=_adiabat_blend, _ltf=_linear_tf):
+                    # T(r, P) of a T(P) table, blended with the linear guess below blend 1
+                    t_adi = _table_lookup(lp, ts, low)
 
-                # Clamp adiabat T to a physically reasonable range.
-                # np.interp flat-extrapolates at the edges, but the Brent
-                # solver may query at extreme P values far beyond the
-                # converged profile, producing huge T. Cap at 100,000 K
-                # (PALEOS table maximum) and floor at 100 K.
-                _T_MAX_CLAMP = 100000.0
-                _T_MIN_CLAMP = 100.0
-
-                if _adiabat_blend < 1.0:
-                    _blend = _adiabat_blend
-
-                    def _temperature_func(
-                        r, P, _b=_blend, _lp=_logP_sorted, _ts=_T_sorted, _ltf=_linear_tf
-                    ):
+                    def t_of(r, P):
+                        if _b >= 1.0:
+                            return surface_temperature if P <= 0 else t_adi(P)
                         T_lin = _ltf(r)
-                        if P <= 0:
-                            return T_lin
-                        # W5: math.log10 avoids numpy scalar dispatch (~1 us/call)
-                        T_adi = float(np.interp(math.log10(P), _lp, _ts))
-                        T_adi = max(_T_MIN_CLAMP, min(T_adi, _T_MAX_CLAMP))
-                        return (1.0 - _b) * T_lin + _b * T_adi
+                        return T_lin if P <= 0 else (1.0 - _b) * T_lin + _b * t_adi(P)
 
-                else:
+                    return t_of
 
-                    def _temperature_func(r, P, _lp=_logP_sorted, _ts=_T_sorted):
-                        if P <= 0:
-                            return surface_temperature
-                        # W5: math.log10 avoids numpy scalar dispatch (~1 us/call)
-                        T_val = float(np.interp(math.log10(P), _lp, _ts))
-                        return max(_T_MIN_CLAMP, min(T_val, _T_MAX_CLAMP))
+                def _layered(T):
+                    # the mantle table, with .core the core table that the core nodes read and
+                    # .full set on the full adiabat (blend 1)
+                    mantle, core = _layer_tables(
+                        prev_pressure,
+                        T,
+                        prev_mass_enclosed,
+                        cmb_mass,
+                        _top_shell,
+                        temperature_mode == 'adiabatic_from_cmb',
+                    )
+                    f = _table_t(*mantle)
+                    f.full = _adiabat_blend >= 1.0
+                    if core is not None:
+                        f.core = _table_t(*core, low=True)
+                    return f
+
+                _temperature_func = _layered(adiabat_T)
+                # T(r, P) of the outer-core liquid continued below the ICB to the centre
+                if core_liq is not None:
+                    liquid = _temperature_func
+                    if icb_mass > 0.0:
+                        liquid_T = _adiabat(
+                            prev_radii, prev_pressure, prev_mass_enclosed, icb=0.0
+                        )
+                        liquid = _layered(liquid_T)
+                        up = np.asarray(prev_mass_enclosed) > icb_mass  # 1 adiabat there
+                        nodes = zip(prev_radii[up], prev_pressure[up], prev_mass_enclosed[up])
+                        dev = [
+                            abs(_T_at(liquid, *x) / _T_at(_temperature_func, *x) - 1)
+                            for x in nodes
+                        ]
+                        dev = float(np.max(dev, initial=0.0))  # NaN stays NaN
+                        logger.debug(
+                            'Liquid branch above the ICB: relative difference %.3g', dev
+                        )
+                        if not dev <= _LIQUID_BRANCH_RTOL:
+                            raise RuntimeError(
+                                f'the liquid branch differs from the T table above the ICB by '
+                                f'{dev:.3g} (relative); both take one adiabat there'
+                            )
+                    _temperature_func.liquid = liquid
 
                 # Pre-compute temperatures array for the density update loop
                 # (uses the converged pressure from the previous iteration)
-                temperatures = np.array(
-                    [_temperature_func(radii[i], prev_pressure[i]) for i in range(num_layers)]
-                )
+                temperatures = _node_T(radii, prev_pressure, prev_mass_enclosed)
             else:
 
                 def _temperature_func(r, P, _tf=_linear_tf):
@@ -2282,6 +2617,25 @@ def _solve(
             )
             temperatures = np.asarray(_output_tf(radii), dtype=float)
 
+        if core_liq is not None and prev_pressure is not None:
+            t_of = getattr(_temperature_func, 'liquid', _temperature_func)
+            t_prev = (
+                _node_T(prev_radii, prev_pressure, prev_mass_enclosed)
+                if core_temperature_arrays is not None
+                else [
+                    _T_at(t_of, *x) for x in zip(prev_radii, prev_pressure, prev_mass_enclosed)
+                ]
+            )
+            m23 = hasattr(_temperature_func, 'liquid')  # the root mass of the superheat test
+            icb_mass = icb_from_profile(
+                prev_mass_enclosed,
+                prev_pressure,
+                t_prev,
+                cmb_mass,
+                core_liq,
+                m23=m23,
+                cmb_point_rule=_cmb_T(prev_radii, prev_mass_enclosed),
+            )[0]
         pressure[0] = earth_center_pressure
 
         # Adaptive Picard blending: start at 0.5, reduce if mass oscillates
@@ -2383,8 +2737,10 @@ def _solve(
                     binodal_T_scale,
                     use_jax=use_jax,
                     temperature_arrays=temperature_arrays,
+                    core_temperature_arrays=core_temperature_arrays,
                     volatile_profile=volatile_profile,
                     surface_pressure=target_surface_pressure,
+                    icb_mass=icb_mass,
                 )
                 if config_params.get('debug_profile_dir') and logger.isEnabledFor(
                     logging.DEBUG
@@ -2510,8 +2866,10 @@ def _solve(
                     binodal_T_scale,
                     use_jax=use_jax,
                     temperature_arrays=temperature_arrays,
+                    core_temperature_arrays=core_temperature_arrays,
                     volatile_profile=volatile_profile,
                     surface_pressure=target_surface_pressure,
+                    icb_mass=icb_mass,
                 )
                 _require_finite(
                     radii,
@@ -2572,13 +2930,8 @@ def _solve(
 
             # Compute temperatures for valid shells
             if _temperature_func is not None:
-                T_arr = np.array(
-                    [
-                        _temperature_func(radii[i], pressure[i])
-                        for i in range(n_valid)
-                        if p_valid[i]
-                    ]
-                )
+                valid = np.flatnonzero(p_valid)
+                T_arr = _node_T(radii[valid], pressure[valid], mass_enclosed[valid])
             else:
                 T_arr = np.full(int(np.sum(p_valid)), 300.0)
 
@@ -2591,8 +2944,11 @@ def _solve(
                 m_valid >= core_mantle_mass * (1.0 - rtol)
             )
             in_mantle = ~in_core & ~in_ice
+            in_inner = in_core & two_layer & (m_valid < icb_mass * (1.0 - rtol))
+            in_core = in_core & ~in_inner
 
             for layer_name, mask in [
+                ('inner_core', in_inner),
                 ('core', in_core),
                 ('mantle', in_mantle),
                 ('ice_layer', in_ice),
@@ -2784,9 +3140,7 @@ def _solve(
         # Recompute the temperatures array from the converged pressure profile
         # so model_results['temperature'] reflects actual T(P), not the pre-Brent estimate.
         if _temperature_func is not None:
-            temperatures = np.array(
-                [_temperature_func(radii[i], pressure[i]) for i in range(num_layers)]
-            )
+            temperatures = _node_T(radii, pressure, mass_enclosed)
 
         # Save converged profiles for the next outer iteration's adiabat
         prev_radii = radii.copy()
@@ -2835,6 +3189,7 @@ def _solve(
                 )
 
         relative_diff_outer_mass = np.abs((calculated_mass - planet_mass) / planet_mass)
+        _pass_err = float(relative_diff_outer_mass)
 
         # Adaptive Picard alpha: detect mass oscillation
         mass_error_signed = (calculated_mass - planet_mass) / planet_mass
@@ -2872,6 +3227,9 @@ def _solve(
                 'converged_pressure': converged_pressure,
                 'adiabat_computed': _adiabat_computed,
                 'adiabat_blend': _adiabat_blend,
+                'icb_mass': icb_mass,
+                'icb_adiabat': icb_adiabat,
+                'temperature_func': _temperature_func,
                 'adiabat_table_blend': _table_blend,
             }
             oscillation_count = 0
@@ -2940,7 +3298,11 @@ def _solve(
                     f'activating adiabat blend.',
                 )
             continue  # the blend ramps up over the next passes
-        if relative_diff_outer_mass < tolerance_outer:
+        icb_moving = core_liq is not None and any(
+            d > b for d, b in _icb_misses(radii, mass_enclosed, pressure, temperatures)[:2]
+        )
+        table_settled = not _adiabat_computed or _table_err < tolerance_outer
+        if relative_diff_outer_mass < tolerance_outer and not icb_moving and table_settled:
             logger.log(
                 progress,
                 f'Outer loop (total mass) converged after {outer_iter + 1} iterations.',
@@ -2955,6 +3317,13 @@ def _solve(
             )
 
     def _best_pass():
+        # the inner core and T profile of that pass
+        nonlocal icb_mass, icb_adiabat, _temperature_func
+        icb_mass, icb_adiabat, _temperature_func = (
+            best_profiles['icb_mass'],
+            best_profiles['icb_adiabat'],
+            best_profiles['temperature_func'],
+        )
         # fresh copies: the saved profiles can be read-only views of JAX buffers
         T = best_profiles['temperatures']
         return (
@@ -3071,8 +3440,27 @@ def _solve(
             _table_blend,
             temperature_mode,
         )
-        converged = converged_mass = False
-        accepted_on = accept_mass_limit = None
+        converged, converged_mass, accepted_on, accept_mass_limit = _REFUSED.values()
+    icb_converged, superheat = True, None  # the ICB tests of the returned pass
+    if core_liq is not None and np.all(np.isfinite(pressure)) and pressure[0] > 0:
+        (miss, bound), (lag, tol), superheat = _icb_misses(
+            radii, mass_enclosed, pressure, temperatures
+        )
+        icb_converged = miss <= bound and lag <= tol
+        _check_full_adiabat_accept(converged, ramp_asked, _temperature_func)
+        if converged and not icb_converged:  # an accept path that skipped the ICB test
+            logger.warning(
+                'Not converged: the inner-core boundary misses %s%s (accepted_on=%s).',
+                f'the liquidus of its liquid by {miss:.3g} K'
+                if superheat is not None
+                else f'the liquidus root of the returned profile by {miss / cmb_mass:.3g} of '
+                'the core mass',
+                f' and lies {lag / cmb_mass:.3g} off the ICB of its adiabat'
+                if lag > tol
+                else '',
+                accepted_on,
+            )
+            converged, converged_mass, accepted_on, accept_mass_limit = _REFUSED.values()
 
     # Return rho_EOS(P, T) at the returned nodes, not the damped Picard iterate.
     density_from_eos = rho_eos is not None
@@ -3124,11 +3512,14 @@ def _solve(
             volatile_profile,
         )
 
-    self_consistency = None  # largest |T - adiabat(P)| of the returned mantle, in K
+    self_consistency = core_lag = None  # largest |T - adiabat(P)| of mantle, core [K]
     if _adiabat_computed and _adiabat_blend >= 1.0:
-        keep = (np.asarray(mass_enclosed) >= cmb_mass) & (pressure > 0)
-        lag = np.abs(np.asarray(temperatures) - _adiabat(radii, pressure, mass_enclosed))[keep]
-        self_consistency = float(lag.max()) if lag.size else None
+        adiabat = _adiabat(radii, pressure, mass_enclosed)
+        self_consistency, core_lag = _layer_lags(
+            temperatures, adiabat, mass_enclosed, pressure, cmb_mass
+        )
+        if temperature_mode == 'adiabatic_from_cmb':
+            core_lag = None  # no core adiabat below a CMB anchor
 
     model_results = {
         'layer_eos_config': layer_eos_config,
@@ -3151,15 +3542,83 @@ def _solve(
         'stopped_on_wall_clock': stop_label == 'timeout',
         'accept_mass_limit': accept_mass_limit,
         'density_from_eos': density_from_eos,
+        'icb_converged': bool(icb_converged),
+        'icb_superheat': superheat,
+        'icb_adiabat': icb_adiabat if two_layer else None,
         'p_center': pressure[0] if len(pressure) > 0 else None,
         'padded': bool(pad.size and pad[-1]),
         'adiabat_computed': _adiabat_computed,
         'adiabat_blend': _adiabat_blend,
         'adiabat_table_blend': _table_blend,
         'adiabat_self_consistency': self_consistency,
+        'adiabat_self_consistency_core': core_lag,
         'adiabat_seeded': seeded,
     }
+    m_end = mass_enclosed[-1] if len(mass_enclosed) else 0.0
+    reached = m_end >= cmb_mass * (1.0 - 1e-12) and np.all(np.isfinite(pressure))
+    model_results['core'] = (
+        None
+        if not reached
+        else _core_result(
+            model_results,
+            layer_mixtures,
+            core_liq,
+            icb_mass,
+            _temperature_func,
+            core_temperature_arrays,
+            _cmb_T(model_results['radii'], mass_enclosed),
+            interpolation_cache=interpolation_cache,
+            material_dictionaries=material_dictionaries,
+            solidus_func=solidus_func,
+            liquidus_func=liquidus_func,
+            mushy_zone_factors=mushy_zone_factors,
+            condensed_rho_min=condensed_rho_min,
+            condensed_rho_scale=condensed_rho_scale,
+            binodal_T_scale=binodal_T_scale,
+        )
+    )
     return model_results
+
+
+def _core_result(
+    res, layer_mixtures, core_liq, icb_mass, temperature_func, core_table, cmb_rule, **eos_args
+):
+    """``core_profile.core_arrays`` of a finished solve: the core nodes, a CMB node and the ICB.
+
+    ``core_table`` is the core temperature table of ``main`` or None; ``cmb_rule`` the T rule
+    of the CMB point of the ICB readers (``_cmb_point_rule``); ``eos_args`` are the EOS keyword
+    arguments of ``coupled_odes``.
+    """
+    m, p, t = (
+        np.asarray(res[k], dtype=float) for k in ('mass_enclosed', 'pressure', 'temperature')
+    )
+    cmb_mass = res['cmb_mass']
+    solid_above = 0.0
+    if core_liq is not None:  # the solid above the ICB of the solved layers
+        solid_above = icb_from_profile(
+            m, p, t, cmb_mass, core_liq, icb_mass, cmb_point_rule=cmb_rule
+        )[2]
+
+    def t_at(r, pres):
+        if core_table is not None:
+            return float(core_temperature(pres, core_table))
+        if temperature_func is not None:  # the core side: the core table of a layered T
+            return getattr(temperature_func, 'core', temperature_func)(r, pres)
+        return float(np.interp(r, res['radii'], t))
+
+    def rhs(r, y):
+        return coupled_odes(
+            r,
+            y,
+            cmb_mass,
+            res['core_mantle_mass'],
+            layer_mixtures,
+            temperature=t_at(r, y[2]),
+            icb_mass=icb_mass,
+            **eos_args,
+        )
+
+    return core_arrays(res, layer_mixtures, rhs, t_at, icb_mass, solid_above)
 
 
 def solve_miscible_interior(
@@ -3171,6 +3630,7 @@ def solve_miscible_interior(
     volatile_profile=None,
     temperature_function=None,
     temperature_arrays=None,
+    core_temperature_arrays=None,
     h2_mass_targets=None,
     max_iterations=10,
     mass_tolerance=0.01,
@@ -3233,6 +3693,7 @@ def solve_miscible_interior(
             volatile_profile,
             temperature_function=temperature_function,
             temperature_arrays=temperature_arrays,
+            core_temperature_arrays=core_temperature_arrays,
         )
         result['solvus_radius'] = None
         result['solvus_temperature'] = None
@@ -3261,6 +3722,7 @@ def solve_miscible_interior(
             volatile_profile,
             temperature_function=temperature_function,
             temperature_arrays=temperature_arrays,
+            core_temperature_arrays=core_temperature_arrays,
         )
 
         if not result.get('converged', False):

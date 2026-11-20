@@ -9,6 +9,7 @@ src/zalmoxis/
 ├── config.py             # Config loading, parsing, validation, EOS setup
 ├── solver.py             # main() solver loop (3 nested iterations)
 ├── invariants.py         # Physical invariants of an accepted result
+├── core_profile.py       # Inner-core boundary and core arrays
 ├── output.py             # post_processing(), file output
 ├── structure_model.py    # ODE system: coupled_odes(), solve_structure()
 ├── eos/                  # EOS package, organized by family
@@ -33,6 +34,7 @@ src/zalmoxis/
 - [`zalmoxis.config`](zalmoxis.config.md) - Configuration loading, parsing, validation
 - [`zalmoxis.solver`](zalmoxis.solver.md) - Solver loop (`main()`)
 - [`zalmoxis.invariants`](zalmoxis.invariants.md) - Invariant checks on an accepted result
+- [`zalmoxis.core_profile`](zalmoxis.core_profile.md) - Inner-core boundary and core arrays
 - [`zalmoxis.output`](zalmoxis.output.md) - Post-processing and file output
 - [`zalmoxis.structure_model`](zalmoxis.structure_model.md) - ODE system
 

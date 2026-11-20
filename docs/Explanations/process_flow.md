@@ -7,7 +7,7 @@ Read it to see why a run returns a given structure, why a returned profile can h
 ## Configuration Loading
 
 The function `load_zalmoxis_config()` (in `config.py`) reads a TOML configuration file that specifies planet mass, layer mass fractions, per-layer EOS identifiers, temperature profile settings, solver tolerances, and output options.
-The `[EOS]` section is parsed by `parse_eos_config()` (also in `config.py`), which accepts both the new per-layer format and the legacy global-string format.
+The `[EOS]` section is parsed by `parse_eos_config()` (also in `config.py`), which reads the EOS of each layer, or a single `choice` key, a preset name that expands to the EOS of each layer ([legacy configuration](../How-to/configuration.md#legacy-configuration-backward-compatibility)).
 
 ## Initial Parameter Setup
 
@@ -185,6 +185,13 @@ Made with `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then 
 The numerical solve is accepted when one of the tests below passes: the result then has `converged = True`, and `accepted_on` names the test, or `timeout` when the wall clock stopped the solve of the returned profile; it is None when no test passes.
 `stopped_on_wall_clock` is True when the wall clock stopped that solve, also when no test passed.
 The table band check (see [EOS physics](eos_physics.md)) runs after these tests: a band failure sets `converged = False` and keeps `accepted_on`, so read `converged` for the final verdict.
+3 later tests can refuse a result that a test of the table below accepted:
+
+- the [full-adiabat rule](#full-adiabat-rule), when the result does not carry the full adiabat;
+- the 2 ICB tests of a [two-layer core](mixing.md#how-a-solve-converges-on-one-icb);
+- the check of a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller): a core node lies beyond the table by more than 0.1 of its pressure range.
+
+A refusal sets `converged` and `converged_mass` to False, and `accepted_on` and `accept_mass_limit` to None.
 
 | `accepted_on` | Outer solver | Test |
 |---|---|---|
@@ -244,13 +251,17 @@ Then a test passes only on a result with the full adiabat:
 - `adiabat_blend` is 1;
 - the T(P) table of that pass was built on the pressure of a pass at blend 1 (`adiabat_table_blend` is 1).
 
+The strict test also needs a table built on a pass that met the mass tolerance of the solve: `tolerance_outer`, or `min(tolerance_outer, newton_tol)` in a ramp that `main` starts with the Newton outer solver ([Which table the strict test accepts](adiabat_integration.md#which-table-the-strict-test-accepts)).
+A table from a seed or from the first guess never counts.
+The other accept tests do not wait for this table, and the cap `max_iterations_outer` still ends the outer loop.
+
 **The blend ramp.** The blend ramp moves the temperature from the linear first guess (`adiabat_blend` 0) to the adiabat (`adiabat_blend` 1) in steps of 0.25, one per outer pass.
 Each pass builds its table on the pressure of the pass before it.
 So the first pass at blend 1 reads the table of the blend-0.75 pass, and the solve does not accept it.
 
 **A result short of the full adiabat.** When a test would accept such a result, the solve refuses it:
 
-- the result has `converged = False`, `converged_mass = False` and `accepted_on` None;
+- the result has `converged = False`, `converged_mass = False`, and `accepted_on` and `accept_mass_limit` None;
 - the solve logs a warning (at DEBUG for a step of the Newton outer solver);
 - `main` then retries, and does not skip the retry on `retry_skip`;
 - `main` raises `StructureInvariantError` on an accepted result in such a mode below blend 1 or on a table below blend 1.
@@ -269,14 +280,26 @@ Its mantle temperature therefore differs from the adiabat of its own pressure by
 The measured differences:
 
 - **Mantle, first grid start-up solve at 1 atm:** 0.07 K at the top node and at most 0.1 K at the other mantle nodes ([Secant tail and seeded re-solve on the PROTEUS grid start-up](../Validation/hydrostatic_structure.md#secant-tail-and-seeded-re-solve-on-the-proteus-grid-start-up)).
-- **Core:** the core nodes read the same table. Where the core adiabat runs along the melting curve of the PALEOS iron table, their temperature can lie further off: up to 26.2 K at a core node near the centre for `input/default.toml` at 2515 K on macOS arm64 ([Centre temperature over round-off starts](../Validation/thermal_state.md#centre-temperature-over-round-off-starts)).
+- **Core:** the core nodes read the core part of the same table. Where the core adiabat crosses the melting curve of the PALEOS iron table, $\nabla_\mathrm{ad}$ changes steeply ([Accuracy on the PALEOS tables](adiabat_integration.md#accuracy-on-the-paleos-tables)). There, a temperature difference from the adiabat at the top core node grows about 15 times towards the centre. For `input/default.toml` at 2515 K on macOS arm64, the returned centre temperature lies $-8.3$ to $+12.8$ K from the adiabat of the returned structure ([Centre temperature over round-off starts](../Validation/thermal_state.md#centre-temperature-over-round-off-starts)).
 - **PROTEUS initial structure:** see [Newton and Picard on the PROTEUS initial structure](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure).
 
 The adiabat holds $T$ below $10^5$ Pa ([How the adiabat is integrated](adiabat_integration.md#low-pressure-padded-tops-missing-gradients-and-caps)), so on a fixed structure the integrated adiabat changes continuously with the top pressure and does not jump at 1 bar.
 The temperature table of the density solve takes the same adiabat over the top cell, padded or not ([How the density solve reads the temperature over the top cell](adiabat_integration.md#how-the-density-solve-reads-the-temperature-over-the-top-cell)), so its lookup above 1 bar also does not jump with the top pressure.
-The tests check this continuity on fixed structures only, not the lag of an accepted solve.
+The tests check this continuity on fixed structures.
+The lag of an accepted solve behind the adiabat of its own structure is a separate quantity: [Newton and Picard on the PROTEUS initial structure](../Validation/hydrostatic_structure.md#newton-and-picard-on-the-proteus-initial-structure) bounds it in the mantle and [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre) in the core.
 
-`adiabat_self_consistency` gives the largest difference, in K, between the returned mantle temperature and the adiabat recomputed on the returned structure; it is None below blend 1 and when no mantle node has a positive pressure.
+The lag of a node is the absolute difference, in K, between its returned temperature and the adiabat recomputed on the returned structure.
+`adiabat_self_consistency` gives the largest lag of the mantle nodes.
+It is None below blend 1 and when no mantle node has a positive pressure.
+
+`adiabat_self_consistency_core` gives the largest lag of the core nodes.
+The core nodes read their temperature from the T(P) table of the pass before, so their temperature lags the adiabat of the returned structure.
+The strict test bounds this lag only through the mass error of the pass that built the table.
+The value is None in 3 cases:
+
+- below blend 1;
+- with `temperature_mode = 'adiabatic_from_cmb'`, which integrates no adiabat below the CMB;
+- when no core node has a positive pressure.
 
 ### Secant tail and seeded re-solve
 
@@ -300,7 +323,7 @@ No pass of this solve built that table, so `adiabat_table_blend` is -1.0 and no 
 A radius step that gives a radius that is not finite and positive raises `StructureSolveError`, which names the outer pass and the radius; without a seed, this error stops the solve.
 A seeded solve that does not converge, or that raises `StructureSolveError`, runs again without the seed; the time of the seeded attempt counts in the `total_time` of the result.
 
-At a core mass fraction of 0.95 in the PROTEUS grid, the secant tail brings a mass error of 0.24 % below $10^{-4}$ in 3 full-adiabat passes; the cube-root rule needs 10.
+At a core mass fraction of 0.95 in the PROTEUS grid, the secant tail brings a mass error of 0.22 % below $10^{-4}$ in 3 full-adiabat passes, and the strict test accepts on the 4th; the cube-root rule needs 11 to bring the error below $10^{-4}$.
 
 **Where this is checked.** [Secant tail and seeded re-solve on the PROTEUS grid start-up](../Validation/hydrostatic_structure.md#secant-tail-and-seeded-re-solve-on-the-proteus-grid-start-up).
 

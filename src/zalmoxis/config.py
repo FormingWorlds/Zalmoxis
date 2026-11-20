@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import numbers
 import os
 import sys
 
@@ -22,12 +23,12 @@ from .constants import (
     earth_mass,
 )
 from .eos import get_solidus_liquidus_functions
-from .eos.core_alloy import ALLOY_PREFIX, is_alloy_mixture, split_alloy
+from .eos.core_alloy import ALLOY_PREFIX, IRON_SIDES, is_alloy_mixture, split_alloy
 from .eos.temperature import _T_MAX, _T_MIN_CMB, _is_real
 from .eos_analytic import USER_SELECTABLE_MATERIALS
 from .eos_properties import EOS_REGISTRY
 from .eos_vinet import VALID_VINET_KEYS
-from .melting_curves import derive_solidus_from_liquidus
+from .melting_curves import VALID_IRON_MELTING, derive_solidus_from_liquidus
 from .mixing import (
     _PALEOS_2PHASE_NAMES,
     _PALEOS_UNIFIED_NAMES,
@@ -69,7 +70,19 @@ VALID_TABULATED_EOS = {
     'PALEOS:MgSiO3',
     'PALEOS:H2O',
     'Chabrier:H',
-}
+} | set(IRON_SIDES)
+CORE_LAYERS = ('core', 'inner_core')
+NEWTON_LIQUIDUS = (
+    "core_liquidus needs outer_solver = 'picard' (the Zalmoxis default; PROTEUS defaults to "
+    'newton and must set picard): a newton probe solves one outer pass, with no profile of a '
+    'previous pass for the liquidus rule; with newton use inner_core_mass_fraction'
+)
+CMB_LIQUIDUS = (
+    "core_liquidus needs a core temperature profile: temperature_mode = 'adiabatic_from_cmb' "
+    'carries the surface temperature through the core, so the liquidus rule would read the '
+    'surface temperature as the core temperature; use inner_core_mass_fraction or give the '
+    'core T as core_temperature_arrays'
+)
 
 # WolfBower2018 tables are valid up to ~1 TPa. The Brent pressure solver with
 # out-of-bounds clamping handles mantle pressures exceeding the table boundary
@@ -124,6 +137,8 @@ def parse_eos_config(eos_section):
         water = eos_section.get('ice_layer', '')
         if water:
             layer_eos['ice_layer'] = water
+        if eos_section.get('inner_core', ''):
+            layer_eos['inner_core'] = eos_section['inner_core']
         return layer_eos
 
     # Legacy format: expand 'choice' field
@@ -174,12 +189,10 @@ def validate_layer_eos(layer_eos_config):
     """
     for layer, eos_str in layer_eos_config.items():
         if ALLOY_PREFIX in eos_str:  # before the parser renormalises the fractions
-            if layer != 'core':
+            if layer not in CORE_LAYERS:
                 raise ValueError(f"CoreAlloy components belong in the core, not in '{layer}'")
             _check_alloy_fractions(eos_str)
         mixture = parse_layer_components(eos_str)
-        if is_alloy_mixture(mixture):
-            split_alloy(mixture)
         for comp in mixture.components:
             if comp in VALID_TABULATED_EOS or comp.startswith(ALLOY_PREFIX):
                 continue
@@ -209,6 +222,76 @@ def validate_layer_eos(layer_eos_config):
                 f'Valid Vinet: Vinet:<material> with '
                 f'{sorted(VALID_VINET_KEYS)}.'
             )
+    _check_two_layer_core(layer_eos_config)
+
+
+def _check_two_layer_core(layer_eos_config):
+    """Each iron side belongs in its core layer and needs its partner layer: the liquid side as
+    the only iron base of the outer core and the solid side as that of the inner core, in any
+    component order; light elements belong in a core layer and pass ``split_alloy``.
+    ``validate_config`` and ``main`` run it for callers that pass a dict."""
+    mixes = {
+        layer: parse_layer_components(eos) for layer, eos in layer_eos_config.items() if eos
+    }
+    for layer, mix in mixes.items():
+        if is_alloy_mixture(mix):
+            if layer not in CORE_LAYERS:
+                raise ValueError(f"CoreAlloy components belong in the core, not in '{layer}'")
+            split_alloy(mix)
+    comps = {layer: mix.components for layer, mix in mixes.items()}
+    for layer, names in comps.items():
+        for side, home in zip(IRON_SIDES, CORE_LAYERS):
+            if side in names and layer != home:
+                raise ValueError(f"{side} belongs in '{home}', not in '{layer}'")
+    bases = {
+        layer: [c for c in names if not c.startswith(ALLOY_PREFIX)]
+        for layer, names in comps.items()
+        if layer in CORE_LAYERS
+    }
+    if 'inner_core' not in bases:
+        if IRON_SIDES[0] in bases.get('core', []):
+            raise ValueError(
+                f"a core on {IRON_SIDES[0]} needs an 'inner_core' on {IRON_SIDES[1]}"
+            )
+        return
+    for layer, side in zip(CORE_LAYERS, IRON_SIDES):
+        if bases.get(layer) != [side]:
+            raise ValueError(
+                f"the '{layer}' of a two-layer core needs the {side} base alone, "
+                f'got {bases.get(layer)}'
+            )
+
+
+def _check_icb_rule(config_params, core_table=False):
+    """An inner core takes its boundary from exactly one of core_liquidus (an iron melting curve
+    name, or a callable T_liq(P) [K]) and inner_core_mass_fraction; a one-layer core takes
+    neither. ``core_table`` is True when the caller gives the core T as a table
+    (``core_temperature_arrays``), which the CMB-anchored adiabat then does not set."""
+    liq = config_params.get('core_liquidus') or ''
+    frac = config_params.get('inner_core_mass_fraction')
+    if callable(liq):  # T_liq(P) [K] of the outer core, from a caller such as PROTEUS
+        liq = 'callable'
+    elif not isinstance(liq, str) or (liq and liq not in VALID_IRON_MELTING):
+        raise ValueError(
+            f'core_liquidus must be one of {sorted(VALID_IRON_MELTING)} or empty, got {liq!r}'
+        )
+    if frac is not None and (
+        isinstance(frac, bool) or not isinstance(frac, numbers.Real) or not 0.0 <= frac <= 1.0
+    ):
+        raise ValueError(f'inner_core_mass_fraction must be a number in [0, 1], got {frac!r}')
+    if (config_params.get('layer_eos_config') or {}).get('inner_core'):
+        if bool(liq) == (frac is not None):
+            raise ValueError(
+                'a two-layer core needs exactly one of core_liquidus and '
+                'inner_core_mass_fraction'
+            )
+        if liq and config_params.get('outer_solver') == 'newton':
+            raise ValueError(NEWTON_LIQUIDUS)
+        cmb = config_params.get('temperature_mode') == 'adiabatic_from_cmb'
+        if liq and cmb and not core_table:
+            raise ValueError(CMB_LIQUIDUS)
+    elif liq or frac is not None:
+        raise ValueError('core_liquidus and inner_core_mass_fraction need an inner_core layer')
 
 
 def band_limit(config_params):
@@ -285,6 +368,8 @@ def validate_config(config_params):
     cmf = config_params['core_mass_fraction']
     mmf = config_params['mantle_mass_fraction']
     layer_eos_config = config_params['layer_eos_config']
+    _check_two_layer_core(layer_eos_config)
+    _check_icb_rule(config_params)
 
     if cmf <= 0 or cmf > 1:
         raise ValueError(
@@ -852,6 +937,10 @@ def load_zalmoxis_config(temp_config_path=None):
         'layer_eos_config': layer_eos_config,
         'rock_solidus': rock_solidus,
         'rock_liquidus': rock_liquidus,
+        'core_liquidus': eos_section.get('core_liquidus', ''),
+        'inner_core_mass_fraction': config['AssumptionsAndInitialGuesses'].get(
+            'inner_core_mass_fraction'
+        ),
         'mushy_zone_factor': mushy_zone_factor,
         'mushy_zone_factors': mushy_zone_factors,
         'condensed_rho_min': condensed_rho_min,

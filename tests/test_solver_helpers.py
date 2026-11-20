@@ -15,10 +15,13 @@ Covers:
 
 from __future__ import annotations
 
+import logging
+
+import numpy as np
 import pytest
 
 from zalmoxis.constants import earth_mass
-from zalmoxis.solver import _default_solver_params, _tighten_solver_params
+from zalmoxis.solver import _default_solver_params, _layer_lags, _tighten_solver_params
 
 pytestmark = pytest.mark.unit
 
@@ -169,3 +172,60 @@ class TestTimeoutAcceptThreshold:
         # mismatch, 'threshold 2%' against a 3% gate, is the regressed bug).
         assert 'threshold 2%' not in src
         assert 'threshold 3%' not in src
+
+
+class _SolveReached(Exception):
+    """Raised by the stub solve, so main stops after its checks."""
+
+
+@pytest.mark.parametrize(
+    ('ice', 'asked', 'fires'),
+    [(True, True, True), (False, True, False), (True, False, False)],
+    ids=['three_layers_adiabat', 'two_layers_adiabat', 'three_layers_no_adiabat'],
+)
+def test_main_warns_once_of_the_uncut_ice_boundary_on_an_adiabat(
+    monkeypatch, caplog, ice, asked, fires
+):
+    """A solve that integrates the adiabat itself with an ice layer logs 1 warning that the
+    boundary between the mantle and the ice layer is not cut, naming the known limit and its
+    docs page; a 2-layer planet or a solve without the adiabat logs none."""
+    from zalmoxis import solver
+
+    def stop(*a, **k):
+        raise _SolveReached
+
+    monkeypatch.setattr(solver, '_adiabat_asked', lambda *a, **k: asked)
+    monkeypatch.setattr(solver, '_solve', stop)
+    monkeypatch.setattr(solver, '_solve_newton_outer', stop)
+    eos = {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'}
+    if ice:
+        eos['ice_layer'] = 'Seager2007:H2O'
+    cfg = {'layer_eos_config': eos, 'temperature_mode': 'adiabatic', 'planet_mass': 5.97e24}
+    with (
+        caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'),
+        pytest.raises(_SolveReached),
+    ):
+        solver.main(cfg, {}, None, '/tmp')
+    hits = [r for r in caplog.records if 'ice layer is not cut' in r.getMessage()]
+    assert len(hits) == (1 if fires else 0)
+    assert all(r.name == 'fwl.zalmoxis.solver' for r in hits)  # reaches the PROTEUS log
+    if fires:
+        assert 'adiabat_integration.md' in hits[0].getMessage()
+
+
+def test_the_layer_lags_split_the_nodes_by_the_core_rule():
+    """_layer_lags gives the largest |T - adiabat| over the mantle and over the core nodes with
+    P > 0. A node in the 1e-12 band below the CMB mass is a mantle node (``is_core``), as is a
+    node at the CMB mass; a core node at P = 0 counts in no layer. Each node has its own
+    difference, so a wrong mask returns another value."""
+    cmb = 1.0e24
+    m = np.array([0.0, 1e23, 2e23, cmb * (1 - 1e-13), cmb, 2 * cmb, 3 * cmb])
+    p = np.array([5.0, 0.0, 4.0, 3.0, 2.0, 1.0, 0.0])
+    adiabat = np.full(7, 1000.0)
+    T = adiabat + np.array([1.0, -64.0, 2.0, 16.0, -8.0, 4.0, 32.0])
+    assert _layer_lags(T, adiabat, m, p, cmb) == (16.0, 2.0)
+    assert _layer_lags(T, adiabat, m, p, 0.0) == (16.0, None)  # no core: P > 0 nodes only
+    assert _layer_lags(T, adiabat, m, np.zeros(7), cmb) == (None, None)
+    T[0] = np.nan
+    mantle, core = _layer_lags(T, adiabat, m, p, cmb)
+    assert mantle == 16.0 and np.isnan(core)
