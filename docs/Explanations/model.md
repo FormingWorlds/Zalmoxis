@@ -5,10 +5,10 @@ Given a total planet mass, layer mass fractions, and a per-layer equation of sta
 
 Several EOS families are supported (see [Equations of State](eos_physics.md) for detailed physics):
 
-- **[PALEOS](eos_physics.md#paleos-iron-mgsio3-h2o)** ([Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract); recommended): all stable phases per material in a single file, $T$-dependent with $\nabla_{\mathrm{ad}}$, up to 50 $M_\oplus$
+- **[PALEOS](eos_physics.md#paleos-iron-mgsio3-h2o)** (Attia et al. (2026)[^cite-attia2026]; recommended): all stable phases per material in a single file, $T$-dependent with $\nabla_{\mathrm{ad}}$, up to 50 $M_\oplus$
 - [PALEOS-2phase](eos_physics.md#paleos-2phase-mgsio3-only): separate solid/liquid tables with explicit melting curve control (MgSiO$_3$ only)
-- [Seager et al. (2007)](eos_physics.md#seager-et-al-2007-tabulated-eos): merged tabulated EOS at 300 K
-- [Wolf & Bower (2018)](eos_physics.md#wolf-bower-2018-temperature-dependent-eos): temperature-dependent RTpress EOS ($\leq 7\,M_\oplus$)
+- [Seager et al. (2007)](eos_physics.md#seager-et-al-2007-tabulated-eos)[^cite-seager2007]: merged tabulated EOS at 300 K
+- [Wolf & Bower (2018)](eos_physics.md#wolf-bower-2018-temperature-dependent-eos)[^cite-wolf2018]: temperature-dependent RTpress EOS ($\leq 7\,M_\oplus$)
 - [RTPress100TPa](eos_physics.md#rtpress100tpa-extended-melt-eos): extended melt table to 100 TPa
 - [Chabrier H/He](eos_physics.md#chabrier-hhe-pure-h2): pure H$_2$ EOS for sub-Neptune interiors (use as mixing component)
 - [Analytic polytrope](eos_physics.md#analytic-modified-polytrope-seager-et-al-2007): fast closed-form approximation, no data files
@@ -120,4 +120,8 @@ See [Equations of State](eos_physics.md) for detailed physics of each EOS family
 - **Temperature range (Wolf & Bower 2018 only):** The $P$-$T$ tables cover 0 to 16500 K; the code raises a `ValueError` if the requested temperature falls outside this grid.
   Out-of-bounds *pressures* are clamped to the table edge (see above), but out-of-bounds *temperatures* are not.
   The Seager et al. (2007) EOS (both tabulated and analytic) is evaluated at a fixed 300 K and carries no temperature dependence.
-- **Composition:** Multi-material volume-additive mixing is supported within layers (see [Multi-material mixing](mixing.md)). Layer boundaries (core/mantle/ice) remain sharp. Non-condensed volatile components are smoothly suppressed to prevent unphysical density deflation.
+- **Composition:** Multi-material volume-additive mixing is supported within layers (see [Multi-material mixing](mixing.md)). Layer boundaries (inner core/outer core/mantle/ice) remain sharp. Non-condensed volatile components are smoothly suppressed to prevent unphysical density deflation.
+
+[^cite-attia2026]: M. Attia, T. Lichtenberg, E. Jungová, M. Sastre, *[PALEOS: Multiphase equations of state and mass-radius relations for exoplanet interiors](https://doi.org/10.1051/0004-6361/202660790)*, Astronomy & Astrophysics, 713, A225, 2026. [SciX](https://scixplorer.org/abs/2026A&A...713A.225A/abstract).
+[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-radius relationships for solid exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669, 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
+[^cite-wolf2018]: A. S. Wolf, D. J. Bower, *[An equation of state for high pressure-temperature liquids (RTpress) with application to MgSiO$_3$ melt](https://doi.org/10.1016/j.pepi.2018.02.004)*, Physics of the Earth and Planetary Interiors, 278, 59-74, 2018. [SciX](https://scixplorer.org/abs/2018PEPI..278...59W/abstract).

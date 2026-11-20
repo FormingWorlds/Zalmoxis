@@ -163,12 +163,8 @@ def test_mantle_external_curves_is_solver_source():
     assert _EOS_USES_EXTERNAL_CURVES is _NEEDS_MELTING_CURVES
 
 
-# ---------------------------------------------------------------------------
-# run_grid.run_single: serialisation contract
-# ---------------------------------------------------------------------------
-# Six radial-profile arrays that must appear as columns in the per-cell
-# CSV body, plus nine metadata fields that must appear in the comment
-# header. ``label`` is added to the metadata header by the writer.
+# run_grid.run_single: the 6 profile arrays are columns of the CSV body, and the 9 metadata
+# fields and ``label`` (added by the writer) lines of its comment header
 _EXPECTED_PROFILE_KEYS = {
     'radii',
     'density',
