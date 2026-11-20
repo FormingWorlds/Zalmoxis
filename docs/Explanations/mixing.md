@@ -352,7 +352,7 @@ The CMB point belongs to the core, so the ICB readers take its temperature from 
 - with a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller), the table at that pressure;
 - with another temperature function, that function at the CMB radius, with $r^3$ linear in the enclosed mass.
 
-The pressure of the point is the one of the section above. $T$ linear in $\ln P$ between the last core node and the first mantle node mixes the mantle gradient into the point: on the 4 stored solves of `input/default.toml` it lies 3.7 to 3.9 K above the adiabat with a node at the core mass, while the core-side step meets it to $10^{-10}$ K. A caller of `icb_from_profile` that passes no rule (`cmb_temperature`) gets that interpolation.
+The pressure of the point is the one of the section above. $T$ linear in $\ln P$ between the last core node and the first mantle node mixes the mantle gradient into the point: on the 4 stored solves of `input/default.toml` it lies 3.7 to 3.9 K above the adiabat with a node at the core mass, while the core-side step meets it to $10^{-10}$ K. A caller of `icb_from_profile` that passes no rule (`cmb_point_rule`) gets that interpolation.
 
 The point changes a result only through the node segment of the CMB, above the last core node at 0.983 to 0.987 of the core mass in the solves below. For the pure-iron core of the default planet, unseeded, the core-side rule against the interpolation:
 

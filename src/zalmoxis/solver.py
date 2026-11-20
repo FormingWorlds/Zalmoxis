@@ -642,7 +642,8 @@ def _cmb_point_rule(core_table, t_func, radii, mass, cmb_mass, core_nabla):
     core side of the T source of a pass: the caller core table; on the full adiabat (``t_func``
     with ``full`` set) the core gradient ``core_nabla(P, T)`` stepped from the last core node
     (``cmb_point_temperature``); else ``t_func`` at the CMB radius, with r^3 linear in the
-    enclosed mass; None without a T function."""
+    enclosed mass (a T function with a step at the CMB radius can then return either side);
+    None without a T function."""
     if core_table is not None:
         return lambda p, *_: float(core_temperature(p, core_table))
     if getattr(t_func, 'full', False):
@@ -2623,7 +2624,7 @@ def _solve(
                 cmb_mass,
                 core_liq,
                 m23=m23,
-                cmb_temperature=_cmb_T(prev_radii, prev_mass_enclosed),
+                cmb_point_rule=_cmb_T(prev_radii, prev_mass_enclosed),
             )[0]
         pressure[0] = earth_center_pressure
 
@@ -3584,7 +3585,7 @@ def _core_result(
     solid_above = 0.0
     if core_liq is not None:  # the solid above the ICB of the solved layers
         solid_above = icb_from_profile(
-            m, p, t, cmb_mass, core_liq, icb_mass, cmb_temperature=cmb_rule
+            m, p, t, cmb_mass, core_liq, icb_mass, cmb_point_rule=cmb_rule
         )[2]
 
     def t_at(r, pres):

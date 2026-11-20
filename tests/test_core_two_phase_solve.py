@@ -217,11 +217,18 @@ def test_an_accept_with_an_icb_off_the_liquidus_is_not_converged(setup, caplog):
 
 def test_an_accept_with_the_adiabat_icb_off_is_not_converged(setup, monkeypatch, caplog):
     """With the liquidus root met and the ICB of the adiabat off by the core mass, no pass stops
-    on the strict test and the cap accept of the 2nd pass is returned as not converged."""
+    on the strict test and the cap accept of the 2nd pass is returned as not converged. The
+    test of this given profile gets the CMB-point rule of its T function (5000 K)."""
     from zalmoxis import solver as zs
     from zalmoxis.mixing import parse_all_layer_mixtures
 
-    monkeypatch.setattr(zs, 'icb_misses', lambda m, p, t, cmb, *_: (0.0, cmb))
+    rules = []
+
+    def misses(m, p, t, cmb, *rest):
+        rules.append(rest[-1])
+        return 0.0, cmb
+
+    monkeypatch.setattr(zs, 'icb_misses', misses)
     md, cfg, input_dir = setup
     cfg = dict(
         cfg,
@@ -237,6 +244,7 @@ def test_an_accept_with_the_adiabat_icb_off_is_not_converged(setup, monkeypatch,
     res = zs._solve(cfg, md, None, input_dir, layer_mixtures=mixes)
     assert res['converged'] is False and res['icb_converged'] is False
     assert res['accepted_on'] is None and '1 off the ICB of its adiabat' in caplog.text
+    assert rules and all(r(1e11, 2e11, 6000.0) == 5000.0 for r in rules)
 
 
 def _superheat_met(res, bound=0.5):
@@ -359,8 +367,10 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
     calls = [c for c in spy.call_args_list if 'm23' in c.kwargs]  # the ICB updates
     m23 = [c.kwargs['m23'] for c in calls]
     assert m23[-1] is True and m23 == sorted(m23), m23
-    rules = [c.kwargs['cmb_temperature'] for c in calls]
+    rules = [c.kwargs['cmb_point_rule'] for c in calls]
     assert all(r is None for r, k in zip(rules, m23) if not k) and rules[-1] is not None
+    final = [c.kwargs for c in spy.call_args_list if 'm23' not in c.kwargs]  # the core result
+    assert final and final[-1]['cmb_point_rule'] is not None
     m, p, t, cmb = (np.asarray(a, dtype=float) for a in calls[-1].args[:4])
     sig = inspect.signature(adiabat_of)
     kw = next(

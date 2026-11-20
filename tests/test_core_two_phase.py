@@ -1098,7 +1098,7 @@ def test_the_cmb_point_of_a_two_gradient_adiabat_takes_the_core_gradient():
     m, p, t, cmb, p_cmb, t_cmb = _two_gradient_sphere()
     want = t_cmb - float(_simon(p_cmb))
     rule = cmb_point_temperature(lambda P, T: 0.4)
-    s, miss = icb_superheat(m, p, t, cmb, _simon, cmb, cmb_temperature=rule)
+    s, miss = icb_superheat(m, p, t, cmb, _simon, cmb, cmb_point_rule=rule)
     assert abs(s - want) <= 1e-10 * t_cmb and miss == max(0.0, s)
     assert abs(icb_superheat(m, p, t, cmb, _simon, cmb)[0] - want) > 1.0
 
@@ -1115,9 +1115,8 @@ def test_the_cmb_point_with_a_stepped_core_table_takes_the_table():
     m, p, t_mantle, cmb, p_cmb, t_cmb = _two_gradient_sphere()
     table = (np.array([p_cmb, 400e9]), np.array([t_cmb + 150.0, t_cmb + 450.0]))
     t = np.where(m < cmb, core_temperature(p, table), t_mantle)
-    r = np.linspace(0.0, _R, 41)
-    rule = _cmb_point_rule(table, None, r, m, cmb, None)
-    got = _core_nodes(m, p, t, cmb, cmb_temperature=rule)
+    rule = _cmb_point_rule(table, None, None, None, cmb, None)
+    got = _core_nodes(m, p, t, cmb, cmb_point_rule=rule)
     want = float(core_temperature(p_cmb, table))
     assert got[1][-1] == p_cmb and got[2][-1] == pytest.approx(want, rel=1e-9)
     assert abs(_core_nodes(m, p, t, cmb)[2][-1] - want) > 50.0
@@ -1130,6 +1129,7 @@ def test_the_cmb_point_rule_takes_the_core_side_of_the_t_source():
     P_cmb; None without a T source."""
     from zalmoxis.eos.temperature import cmb_point_temperature
     from zalmoxis.solver import _cmb_point_rule
+    from zalmoxis.structure_model import core_temperature
 
     m, p, t, cmb, p_cmb, t_cmb = _two_gradient_sphere()
     r = np.linspace(0.0, _R, 41)
@@ -1144,6 +1144,9 @@ def test_the_cmb_point_rule_takes_the_core_side_of_the_t_source():
     step = cmb_point_temperature(nabla)(p_cmb, p[20], t[20])
     assert _cmb_point_rule(None, adiabat, r, m, cmb, nabla)(p_cmb, p[20], t[20]) == step
     assert step == pytest.approx(t_cmb, rel=1e-12)
+    table = (p[[20, 0]], np.array([4000.0, 5000.0]))
+    with_table = _cmb_point_rule(table, adiabat, r, m, cmb, nabla)  # the table first
+    assert with_table(p_cmb, p[20], t[20]) == float(core_temperature(p_cmb, table))
     adiabat.full = False  # a pass of the blend ramp: the T function itself
     assert _cmb_point_rule(None, adiabat, r, m, cmb, nabla)(p_cmb, p[20], t[20]) == 1.0
 
