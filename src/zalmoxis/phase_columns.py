@@ -288,7 +288,8 @@ def compute_layer_phase_columns(
         ``(solidus_func, liquidus_func)`` for 2-phase silicate EOS;
         ignored for unified-PALEOS / Chabrier / Seager paths.
     icb_mass : float
-        Inner-core mass [kg] of a two-layer core: shells below it take the ``inner_core`` EOS.
+        Inner-core mass [kg] of a two-layer core: shells more than 1e-12 (relative) below it
+        take the ``inner_core`` EOS, as in ``structure_model.get_layer_mixture``.
 
     Returns
     -------
@@ -320,7 +321,7 @@ def compute_layer_phase_columns(
 
     for i in range(n):
         m_i = float(mass_enclosed[i])
-        if m_i < icb_mass and inner_eos:
+        if m_i < icb_mass * (1.0 - 1e-12) and inner_eos:  # the ICB rule of get_layer_mixture
             layer, eos_name = 'inner_core', inner_eos
         elif m_i < cmb_mass and core_eos:
             layer, eos_name = 'core', core_eos
