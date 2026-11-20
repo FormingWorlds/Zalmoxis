@@ -1159,3 +1159,24 @@ def test_the_cmb_point_rule_takes_the_core_side_of_the_t_source():
     r_nan[22:], m_nan[22:] = np.nan, np.nan  # a failed stop past the core mass
     assert _cmb_point_rule(None, linear, r_nan, m_nan, cmb, nabla)(p_cmb, p[20], t[20]) == got
     assert _cmb_point_rule(None, None, r, m, cmb, nabla) is None
+
+
+def test_an_accept_off_the_full_adiabat_raises():
+    """The check of an accepted pass of an adiabatic solve: its T function must be the full
+    adiabat (``full``), from which the ICB readers take the CMB point."""
+    from zalmoxis.invariants import StructureInvariantError
+    from zalmoxis.solver import _check_full_adiabat_accept
+
+    def ramp(r, p):
+        return 1.0
+
+    def full(r, p):
+        return 1.0
+
+    ramp.full, full.full = False, True
+    with pytest.raises(StructureInvariantError, match='not on the full adiabat'):
+        _check_full_adiabat_accept(True, True, ramp)
+    with pytest.raises(StructureInvariantError, match='not on the full adiabat'):
+        _check_full_adiabat_accept(True, True, None)
+    for converged, asked, f in ((True, True, full), (False, True, ramp), (True, False, ramp)):
+        _check_full_adiabat_accept(converged, asked, f)  # no error
