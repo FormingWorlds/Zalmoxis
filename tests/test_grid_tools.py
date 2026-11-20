@@ -302,6 +302,7 @@ def test_run_single_writes_csv_with_expected_keys(tmp_path, monkeypatch):
 
     assert data['converged'] is True
     assert data['core_eos'] == 'PALEOS:iron'
+    assert data['inner_core_eos'] == ''  # a one-layer core
     assert data['mantle_eos'] == 'PALEOS:MgSiO3'
     assert data['ice_layer_eos'] == ''
     assert data['rock_solidus_id'] == 'Monteux16-solidus'
