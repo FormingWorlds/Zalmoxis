@@ -254,8 +254,8 @@ def deviations(
             len(core['m']) - 1,
             text='light-element masses of the core arrays against M_ic w_ic + M_oc w_oc',
         )
+    names = np.where(core['phase'] == 1, 'inner_core', 'core') if core else None
     if core and box_at is not None:
-        names = np.where(core['phase'] == 1, 'inner_core', 'core')
         bad = np.zeros(len(names), bool)
         for name in np.unique(names):
             sel = names == name
@@ -296,7 +296,6 @@ def deviations(
             text=f'density {rho[i]:.6e}, expected {ref[i]:.6e} ({layer[i]} EOS)',
         )
     if core and density_at is not None and result.get('density_from_eos'):
-        names = np.where(core['phase'] == 1, 'inner_core', 'core')
         ref = np.full(len(names), np.nan)
         for name in np.unique(names):
             sel = names == name

@@ -2481,16 +2481,11 @@ def _solve(
                     # T(r, P) of a T(P) table, blended with the linear guess below blend 1
                     t_adi = _table_lookup(lp, ts, low)
 
-                    if _b < 1.0:
-
-                        def t_of(r, P):
-                            T_lin = _ltf(r)
-                            return T_lin if P <= 0 else (1.0 - _b) * T_lin + _b * t_adi(P)
-
-                    else:
-
-                        def t_of(r, P):
+                    def t_of(r, P):
+                        if _b >= 1.0:
                             return surface_temperature if P <= 0 else t_adi(P)
+                        T_lin = _ltf(r)
+                        return T_lin if P <= 0 else (1.0 - _b) * T_lin + _b * t_adi(P)
 
                     return t_of
 
@@ -2519,11 +2514,10 @@ def _solve(
                         )
                         liquid = _layered(liquid_T)
                         up = np.asarray(prev_mass_enclosed) > icb_mass  # 1 adiabat there
+                        nodes = zip(prev_radii[up], prev_pressure[up], prev_mass_enclosed[up])
                         dev = [
                             abs(_T_at(liquid, *x) / _T_at(_temperature_func, *x) - 1)
-                            for x in zip(
-                                prev_radii[up], prev_pressure[up], prev_mass_enclosed[up]
-                            )
+                            for x in nodes
                         ]
                         dev = float(np.max(dev, initial=0.0))  # NaN stays NaN
                         logger.debug(

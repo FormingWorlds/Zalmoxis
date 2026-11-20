@@ -151,53 +151,36 @@ def test_an_isothermal_core_has_its_icb_where_iron_melts(setup, caplog):
     assert core['solid_above_icb_mass_fraction'] == 0.0
 
 
-def test_main_refuses_the_liquidus_rule_with_the_newton_outer_solver(setup):
-    """main itself refuses the pair, also when the caller skips validate_config."""
+def _main(setup, cfg):
+    """``main`` on the tables of ``setup`` with the layer mixtures of ``cfg``."""
     from zalmoxis.mixing import parse_all_layer_mixtures
     from zalmoxis.solver import main
 
-    md, cfg, input_dir = setup
-    cfg = dict(cfg, core_liquidus='Anzellini13-iron', outer_solver='newton')
+    mixes = parse_all_layer_mixtures(cfg['layer_eos_config'])
+    return main(cfg, setup[0], None, setup[2], layer_mixtures=mixes)
+
+
+def test_main_refuses_the_liquidus_rule_with_the_newton_outer_solver(setup):
+    """main itself refuses the pair, also when the caller skips validate_config."""
+    cfg = dict(setup[1], core_liquidus='Anzellini13-iron', outer_solver='newton')
     cfg.update(relative_tolerance=1e-9, absolute_tolerance=1e-10)  # what Newton needs
     cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], core=LIQ, inner_core=SOL)
     with pytest.raises(ValueError, match="core_liquidus needs outer_solver = 'picard'"):
-        main(
-            cfg,
-            md,
-            None,
-            input_dir,
-            layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
-        )
+        _main(setup, cfg)
 
 
 def test_a_two_layer_core_keeps_the_mass_limit_of_the_paleos_tables(setup):
     """The side tables span the box of the unified iron table, so they take its 50 M_E limit;
     the mantle has no limit here, so the refusal names a side table. The solid side alone, as a
     one-layer core, is refused for its layer before the limit."""
-    from zalmoxis.mixing import parse_all_layer_mixtures
-    from zalmoxis.solver import main
-
-    md, cfg, input_dir = setup
-    cfg = dict(cfg, inner_core_mass_fraction=0.05, planet_mass=60 * 5.972e24)
+    cfg = dict(setup[1], inner_core_mass_fraction=0.05, planet_mass=60 * 5.972e24)
     cfg['layer_eos_config'] = {'core': LIQ, 'inner_core': SOL, 'mantle': 'Seager2007:MgSiO3'}
     with pytest.raises(ValueError, match='PALEOS-API-2phase:iron-.* EOS is limited to planets'):
-        main(
-            cfg,
-            md,
-            None,
-            input_dir,
-            layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
-        )
+        _main(setup, cfg)
     cfg = dict(cfg, inner_core_mass_fraction=None)
     cfg['layer_eos_config'] = {'core': SOL, 'mantle': 'Seager2007:MgSiO3'}
     with pytest.raises(ValueError, match="iron-solid belongs in 'inner_core', not in 'core'"):
-        main(
-            cfg,
-            md,
-            None,
-            input_dir,
-            layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
-        )
+        _main(setup, cfg)
 
 
 def test_an_accept_with_an_icb_off_the_liquidus_is_not_converged(setup, caplog):
@@ -370,19 +353,9 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
 def test_main_refuses_an_icb_rule_without_an_inner_core(setup):
     """main itself refuses core_liquidus without an inner core; the rule check takes None as
     unset and an empty inner_core as no inner core."""
-    from zalmoxis.mixing import parse_all_layer_mixtures
-    from zalmoxis.solver import main
-
-    md, cfg, input_dir = setup
-    cfg = dict(cfg, core_liquidus='Anzellini13-iron')
+    cfg = dict(setup[1], core_liquidus='Anzellini13-iron')
     with pytest.raises(ValueError, match='need an inner_core layer'):
-        main(
-            cfg,
-            md,
-            None,
-            input_dir,
-            layer_mixtures=parse_all_layer_mixtures(cfg['layer_eos_config']),
-        )
+        _main(setup, cfg)
     from zalmoxis.config import _check_icb_rule
 
     assert _check_icb_rule(dict(cfg, core_liquidus=None)) is None  # None counts as unset
