@@ -654,6 +654,17 @@ def _cmb_point_rule(core_table, t_func, radii, mass, cmb_mass, core_nabla):
     return lambda p, *_: float(t_func(r_cmb, p))
 
 
+def _check_full_adiabat_accept(converged, ramp_asked, t_func):
+    """Raise ``StructureInvariantError`` for an accepted pass of a solve that computes its
+    adiabat when its T function ``t_func`` is not the full adiabat (``full``), from which its
+    ICB readers take the CMB point."""
+    if converged and ramp_asked and not getattr(t_func, 'full', False):
+        raise StructureInvariantError(
+            'the accepted pass is not on the full adiabat (blend 1), so its ICB readers took '
+            'the CMB point from a pass below it'
+        )
+
+
 def _check_core_table(result, table, used, mantle_T):
     """Add ``core_T_used``, ``core_T_nodes_outside`` and ``core_T_max_excess`` (``main``) to
     ``result`` when a core table ``table`` is given; an unused table counts no node. With
@@ -2295,7 +2306,7 @@ def _solve(
         # T rule of the CMB point of the ICB readers on the profile (r, m) of this pass; the
         # passes before the full adiabat keep the interpolation (they only seed later passes)
         f = _temperature_func
-        if temperature_mode == 'adiabatic' and not getattr(f, 'full', False):
+        if ramp_asked and not getattr(f, 'full', False):
             f = None
         return _cmb_point_rule(core_temperature_arrays, f, r, m, cmb_mass, _core_nabla)
 
@@ -3437,10 +3448,7 @@ def _solve(
             radii, mass_enclosed, pressure, temperatures
         )
         icb_converged = miss <= bound and lag <= tol
-        if converged and ramp_asked and not getattr(_temperature_func, 'full', False):
-            raise StructureInvariantError(
-                'the accepted pass reads its CMB point off the full adiabat (blend 1)'
-            )
+        _check_full_adiabat_accept(converged, ramp_asked, _temperature_func)
         if converged and not icb_converged:  # an accept path that skipped the ICB test
             logger.warning(
                 'Not converged: the inner-core boundary misses %s%s (accepted_on=%s).',
