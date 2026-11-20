@@ -627,7 +627,8 @@ def _short_of_adiabat(result, asked):
     return bool(asked and not full)
 
 
-# the accept keys of a result that a test after the mass test refuses
+# the accept keys of a result that the full-adiabat rule, the ICB tests or the core-table
+# range test refuses after the mass test (the table band check keeps accepted_on)
 _REFUSED = {
     'converged': False,
     'converged_mass': False,
