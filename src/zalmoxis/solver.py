@@ -637,18 +637,19 @@ _REFUSED = {
 }
 
 
-def _cmb_point_rule(core_table, t_func, radii, mass, cmb_mass, core_nabla):
+def _cmb_point_rule(core_table, t_func, radii, mass, cmb_mass, core_nabla, ramp_asked=False):
     """T rule of the CMB point of the ICB readers (``core_profile.icb_from_profile``), from the
     core side of the T source of a pass: the caller core table; on the full adiabat (``t_func``
     with ``full`` set) the core gradient ``core_nabla(P, T)`` stepped from the last core node
-    (``cmb_point_temperature``); else ``t_func`` at the CMB radius, with r^3 linear in the
-    enclosed mass (a T function with a step at the CMB radius can then return either side);
-    None without a T function."""
+    (``cmb_point_temperature``); None before the full adiabat of a solve that computes its own
+    adiabat (``ramp_asked``: the linear first guess and the blend ramp) or without a T function;
+    else ``t_func`` at the CMB radius, with r^3 linear in the enclosed mass (a T function with a
+    step at the CMB radius can then return either side)."""
     if core_table is not None:
         return lambda p, *_: float(core_temperature(p, core_table))
     if getattr(t_func, 'full', False):
         return cmb_point_temperature(core_nabla)
-    if t_func is None:
+    if ramp_asked or t_func is None:
         return None
     r_cmb = float(np.interp(cmb_mass, mass, np.asarray(radii) ** 3)) ** (1.0 / 3.0)
     return lambda p, *_: float(t_func(r_cmb, p))
@@ -661,7 +662,7 @@ def _check_full_adiabat_accept(converged, ramp_asked, t_func):
     if converged and ramp_asked and not getattr(t_func, 'full', False):
         raise StructureInvariantError(
             'the accepted pass is not on the full adiabat (blend 1), so its ICB readers took '
-            'the CMB point from a pass below it'
+            'the CMB point from the interpolation, not the core step'
         )
 
 
@@ -2303,12 +2304,10 @@ def _solve(
         )
 
     def _cmb_T(r, m):
-        # T rule of the CMB point of the ICB readers on the profile (r, m) of this pass; the
-        # passes before the full adiabat keep the interpolation (they only seed later passes)
-        f = _temperature_func
-        if ramp_asked and not getattr(f, 'full', False):
-            f = None
-        return _cmb_point_rule(core_temperature_arrays, f, r, m, cmb_mass, _core_nabla)
+        # T rule of the CMB point of the ICB readers on the profile (r, m) of this pass
+        return _cmb_point_rule(
+            core_temperature_arrays, _temperature_func, r, m, cmb_mass, _core_nabla, ramp_asked
+        )
 
     # Adiabat blending state.
     _using_adiabat = False
