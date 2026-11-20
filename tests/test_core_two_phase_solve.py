@@ -244,7 +244,7 @@ def test_an_accept_with_the_adiabat_icb_off_is_not_converged(setup, monkeypatch,
     res = zs._solve(cfg, md, None, input_dir, layer_mixtures=mixes)
     assert res['converged'] is False and res['icb_converged'] is False
     assert res['accepted_on'] is None and '1 off the ICB of its adiabat' in caplog.text
-    assert rules and all(r(1e11, 2e11, 6000.0) == 5000.0 for r in rules)
+    assert rules and all(r is not None and r(1e11, 2e11, 6000.0) == 5000.0 for r in rules)
 
 
 def _superheat_met(res, bound=0.5):
