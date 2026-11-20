@@ -38,7 +38,7 @@ holds an eight-column radial profile body (six numeric SI columns
 ``main_component`` and ``phase``) and a ``# key: value`` comment header
 carrying the CMB and core+mantle mass diagnostics, the ``converged``
 flag, and the per-layer EOS / melting-curve identifiers the solver
-actually used (``core_eos``, ``mantle_eos``, ``ice_layer_eos``,
+actually used (``core_eos``, ``inner_core_eos``, ``mantle_eos``, ``ice_layer_eos``,
 ``rock_solidus_id``, ``rock_liquidus_id``).
 
 ``main_component`` is the dominant chemistry of the layer the shell
@@ -131,6 +131,7 @@ def _write_profile_csv(
         ('cmb_mass', _format_float(model_results['cmb_mass'])),
         ('core_mantle_mass', _format_float(model_results['core_mantle_mass'])),
         ('core_eos', layer_eos.get('core', '')),
+        ('inner_core_eos', layer_eos.get('inner_core', '')),
         ('mantle_eos', layer_eos.get('mantle', '')),
         ('ice_layer_eos', layer_eos.get('ice_layer', '')),
         ('rock_solidus_id', rock_solidus_id),
