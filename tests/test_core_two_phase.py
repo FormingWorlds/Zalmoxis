@@ -498,41 +498,21 @@ def test_the_phase_columns_label_the_inner_core_by_its_side():
     assert phases[:3] == ['solid'] * 3 and phases[3:6] == ['liquid'] * 3
 
 
-@pytest.mark.parametrize('k', [-5.0, -0.5, 0.0, 0.5])
-def test_the_phase_column_at_the_icb_follows_the_layer_rule_of_the_eos(k):
-    """A shell within 1e-12 (relative) below the ICB mass takes the outer core, as in
-    get_layer_mixture, which picks its EOS; 5e-12 below it the inner core."""
-    from zalmoxis.structure_model import get_layer_mixture
-
-    icb = 2.5e24
-    m = np.array([icb * (1.0 + k * 1e-12)])
-    layers = {'core': LIQ, 'inner_core': SOL, 'mantle': 'Seager2007:MgSiO3'}
-    _, phases = compute_layer_phase_columns(
-        pressure=np.full(1, 2e11),
-        temperature=np.full(1, 5000.0),
-        mass_enclosed=m,
-        cmb_mass=6e24,
-        core_mantle_mass=10e24,
-        icb_mass=icb,
-        layer_eos_config=layers,
-    )
-    side = get_layer_mixture(m[0], 6e24, 10e24, layers, icb)
-    assert phases == ['solid' if side == SOL else 'liquid'] and (side == SOL) is (k < -1.0)
-
-
 @pytest.mark.parametrize(
     ('edge', 'k', 'icb'),
     [('cmb', k, icb) for k in (-5.0, -0.5, 0.5) for icb in (2.5e24, 6e24)]
-    + [('ice', k, 2.5e24) for k in (-5.0, -0.5, 0.5)],
+    + [(e, k, 2.5e24) for e in ('ice', 'icb') for k in (-5.0, -0.5, 0.5)]
+    + [('icb', 0.0, 2.5e24)],
 )
-def test_the_phase_column_at_the_cmb_and_the_ice_boundary_follows_the_layer_rule(edge, k, icb):
-    """A shell within 1e-12 (relative) below the core mass or the core+mantle mass takes the
-    layer above, as in get_layer_mixture, also with a full inner core (icb = core mass); an
-    iron shell has the phase of its side."""
+def test_the_phase_column_at_a_layer_boundary_follows_the_layer_rule(edge, k, icb):
+    """A shell within 1e-12 (relative) below the ICB mass, the core mass or the core+mantle
+    mass takes the layer above, as in get_layer_mixture, which picks its EOS, also with a full
+    inner core (icb = core mass); 5e-12 below the ICB it is inner core. An iron shell has the
+    phase of its side."""
     from zalmoxis.structure_model import get_layer_mixture
 
     cmb, cm = 6e24, 10e24
-    m = np.array([(cmb if edge == 'cmb' else cm) * (1.0 + k * 1e-12)])
+    m = np.array([{'cmb': cmb, 'ice': cm, 'icb': icb}[edge] * (1.0 + k * 1e-12)])
     layers = {
         'core': LIQ,
         'inner_core': SOL,
@@ -552,6 +532,7 @@ def test_the_phase_column_at_the_cmb_and_the_ice_boundary_follows_the_layer_rule
     want = {LIQ: ('Fe', 'liquid'), SOL: ('Fe', 'solid'), layers['mantle']: ('MgSiO3', 'solid')}
     want[layers['ice_layer']] = ('H2O', 'solid')  # Seager2007 tables at 300 K
     assert (comp, phases) == ([want[side][0]], [want[side][1]]), side
+    assert edge != 'icb' or (side == SOL) is (k < -1.0)
 
 
 def test_a_profile_without_core_nodes_is_refused():
