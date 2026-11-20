@@ -611,7 +611,9 @@ def test_the_top_cell_shell_meets_the_next_node_across_a_layer_boundary(
     assert cell.layers_differ and np.array_equal(cell.mass_used, cell.mass_rule)
     cmb_anchor = kw['anchor'] == 'cmb'
     miss = float(np.max(np.abs(cell.lookup - cell.march)))
-    print(f'{case} {eos}: shell end {cell.end:.3g} K, lookup minus march {miss:.3g} K')
+    print(
+        f'{case} top {p_top} {eos}: shell end {cell.end:.3g} K, lookup minus march {miss:.3g} K'
+    )
     paleos = eos.startswith('PALEOS')
     assert abs(cell.end) < ((1e-4 if cmb_anchor else 0.01) if paleos else 1e-5), cell.end
     assert miss < 0.5, miss

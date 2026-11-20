@@ -2055,12 +2055,12 @@ def test_the_solve_gives_the_table_the_masses_and_the_direction_of_its_adiabat(
     """_solve builds the T tables of a pass with the enclosed masses of the structure whose
     pressure it reads (the same pair of arrays as one structure integration returned), and
     marks the adiabat as integrated outward only in 'adiabatic_from_cmb', so the top shell takes
-    the mixture node of that adiabat."""
+    the mixture node of that adiabat; a 2-layer planet gives the table no ice boundary."""
     seen, real, made = [], zs._layer_tables, []
 
-    def spy(pressure, T, mass, cmb_mass, top_shell, outward=False):
-        seen.append((np.array(pressure), np.array(mass), outward))
-        return real(pressure, T, mass, cmb_mass, top_shell, outward)
+    def spy(pressure, T, mass, cmb_mass, top_shell, outward=False, boundary=None):
+        seen.append((np.array(pressure), np.array(mass), outward, boundary))
+        return real(pressure, T, mass, cmb_mass, top_shell, outward, boundary)
 
     def structure(*args, **kwargs):
         m, g, P = _canned_structure(*args, **kwargs)
@@ -2070,8 +2070,8 @@ def test_the_solve_gives_the_table_the_masses_and_the_direction_of_its_adiabat(
     monkeypatch.setattr(zs, '_layer_tables', spy)
     _analytic_ramp(structure=structure, temperature_mode=mode, max_iterations_outer=6)
     assert seen
-    for P, m, outward in seen:
-        assert outward is (mode == 'adiabatic_from_cmb')
+    for P, m, outward, boundary in seen:
+        assert outward is (mode == 'adiabatic_from_cmb') and boundary is None
         assert any(np.array_equal(m, mm) and np.array_equal(P, pp) for mm, pp in made)
 
 
