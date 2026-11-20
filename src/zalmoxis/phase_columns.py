@@ -289,7 +289,8 @@ def compute_layer_phase_columns(
         ignored for unified-PALEOS / Chabrier / Seager paths.
     icb_mass : float
         Inner-core mass [kg] of a two-layer core: shells more than 1e-12 (relative) below it
-        take the ``inner_core`` EOS, as in ``structure_model.get_layer_mixture``.
+        take the ``inner_core`` EOS; the CMB and the ice boundary take the same tolerance, as in
+        ``structure_model.get_layer_mixture``.
 
     Returns
     -------
@@ -321,11 +322,12 @@ def compute_layer_phase_columns(
 
     for i in range(n):
         m_i = float(mass_enclosed[i])
-        if m_i < icb_mass * (1.0 - 1e-12) and inner_eos:  # the ICB rule of get_layer_mixture
+        # the layer rule of get_layer_mixture, a boundary 1e-12 (relative) below its mass
+        if m_i < icb_mass * (1.0 - 1e-12) and inner_eos:
             layer, eos_name = 'inner_core', inner_eos
-        elif m_i < cmb_mass and core_eos:
+        elif m_i < cmb_mass * (1.0 - 1e-12) and core_eos:
             layer, eos_name = 'core', core_eos
-        elif m_i < core_mantle_mass and mantle_eos:
+        elif m_i < core_mantle_mass * (1.0 - 1e-12) and mantle_eos:
             layer, eos_name = 'mantle', mantle_eos
         elif ice_eos:
             layer, eos_name = 'ice_layer', ice_eos
