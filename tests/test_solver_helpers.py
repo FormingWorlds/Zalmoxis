@@ -202,12 +202,13 @@ def test_main_warns_once_of_the_uncut_ice_boundary_on_an_adiabat(
         eos['ice_layer'] = 'Seager2007:H2O'
     cfg = {'layer_eos_config': eos, 'temperature_mode': 'adiabatic', 'planet_mass': 5.97e24}
     with (
-        caplog.at_level(logging.WARNING, logger='zalmoxis.solver'),
+        caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'),
         pytest.raises(_SolveReached),
     ):
         solver.main(cfg, {}, None, '/tmp')
     hits = [r for r in caplog.records if 'ice layer is not cut' in r.getMessage()]
     assert len(hits) == (1 if fires else 0)
+    assert all(r.name == 'fwl.zalmoxis.solver' for r in hits)  # reaches the PROTEUS log
     if fires:
         assert 'adiabat_integration.md' in hits[0].getMessage()
 
