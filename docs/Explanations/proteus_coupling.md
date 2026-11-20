@@ -333,7 +333,7 @@ With `use_jax = true` and `temperature_arrays` supplied, Zalmoxis takes T from t
 
 How does a caller set the temperature of the core, not only of the mantle?
 
-`main` takes `core_temperature_arrays = (P_arr, T_arr)`, a table of the core temperature $T$ [K] against the pressure $P$ [Pa]. Each core node and each step of the structure integration in the core then reads $T$ from the table. The mantle keeps its own temperature: `temperature_function`, or `temperature_arrays` with `use_jax`.
+`main` takes `core_temperature_arrays = (P_arr, T_arr)`, a table of the core temperature $T$ in K against the pressure $P$ in Pa. Each core node and each step of the structure integration in the core then reads $T$ from the table. The mantle keeps its own temperature: `temperature_function`, or `temperature_arrays` with `use_jax`.
 
 A core node is a node whose enclosed mass is below the core mass. The same rule picks the core material, so the temperature and the material change at the same node. The table applies in the outer and the inner core, on the numpy and the JAX path, in the core arrays, and in the rule that places the inner-core boundary of a [two-layer core](mixing.md#two-layer-core).
 
