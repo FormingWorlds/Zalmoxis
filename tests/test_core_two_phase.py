@@ -690,7 +690,6 @@ def test_p_icb_in_the_cmb_segment_lies_at_or_above_the_cmb_node(n, scale, frac):
         assert core['P_icb'] == core['P'][-1]
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     ('n', 'scale', 'frac', 'warns'),
     [(11, 3.0, 0.999, True), (41, 1.9, 1.0, False), (11, 1.1, 1.0, False)],

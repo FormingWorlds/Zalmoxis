@@ -178,7 +178,6 @@ class _SolveReached(Exception):
     """Raised by the stub solve, so main stops after its checks."""
 
 
-@pytest.mark.unit
 @pytest.mark.parametrize(
     ('ice', 'asked', 'fires'),
     [(True, True, True), (False, True, False), (True, False, False)],
@@ -213,7 +212,6 @@ def test_main_warns_once_of_the_uncut_ice_boundary_on_an_adiabat(
         assert 'adiabat_integration.md' in hits[0].getMessage()
 
 
-@pytest.mark.unit
 def test_the_layer_lags_split_the_nodes_by_the_core_rule():
     """_layer_lags gives the largest |T - adiabat| over the mantle and over the core nodes with
     P > 0. A node in the 1e-12 band below the CMB mass is a mantle node (``is_core``), as is a
