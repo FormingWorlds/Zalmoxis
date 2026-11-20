@@ -300,8 +300,9 @@ def test_a_cap_accept_reads_the_liquid_branch_of_the_restored_pass(setup, monkey
     res = _fes_cap(setup, caplog)
     assert res['icb_adiabat'] in _pass_adiabat_icbs(adiabat, res)  # the ICB of a real pass
     assert 'Accepting max_iter solution' in caplog.text
-    m, p, t_l, cmb, _, icb = heat.call_args.args  # the final ICB test
+    m, p, t_l, cmb, _, icb, rule = heat.call_args.args  # the final ICB test
     assert icb == res['core']['M_ic'] and res['icb_adiabat'] is not None
+    assert rule is not None  # the core-side T of the CMB point (_cmb_point_rule)
     m = np.asarray(m)
     up = np.flatnonzero((m > max(icb, res['icb_adiabat'])) & (m < cmb))[1:]
     # near-tangent case: the restored pass differs by host (adiabat ICB 0.78 of the CMB mass and
@@ -340,14 +341,44 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
 ):
     """Once the adiabat has its liquid branch, every ICB update takes the liquidus root with
     m^(2/3) linear in P (m23), the mass that the superheat test and the core arrays take at that
-    pressure; the passes before it take the root linear in m (8 passes of the 2480 K Fe-S core)."""
+    pressure; the passes before it take the root linear in m (8 passes of the 2480 K Fe-S core).
+    The passes before the full adiabat give the readers no CMB-point rule. On the full adiabat
+    the rule (``_cmb_point_rule``) meets the liquid branch of the solver recomputed with a node
+    at the core mass to 1e-6 K."""
+    import inspect
+
     from zalmoxis import solver as zs
+    from zalmoxis.core_profile import _cmb_point
+    from zalmoxis.eos.temperature import compute_adiabatic_temperature as adiabat_of
 
     spy = mock.Mock(wraps=zs.icb_from_profile)
+    adiabat = mock.Mock(wraps=adiabat_of)
     monkeypatch.setattr(zs, 'icb_from_profile', spy)
+    monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
     _fes_cap(setup, caplog, max_iterations_outer=8)
-    m23 = [c.kwargs['m23'] for c in spy.call_args_list if 'm23' in c.kwargs]  # the ICB updates
+    calls = [c for c in spy.call_args_list if 'm23' in c.kwargs]  # the ICB updates
+    m23 = [c.kwargs['m23'] for c in calls]
     assert m23[-1] is True and m23 == sorted(m23), m23
+    rules = [c.kwargs['cmb_temperature'] for c in calls]
+    assert all(r is None for r, k in zip(rules, m23) if not k) and rules[-1] is not None
+    m, p, t, cmb = (np.asarray(a, dtype=float) for a in calls[-1].args[:4])
+    sig = inspect.signature(adiabat_of)
+    kw = next(
+        b
+        for b in (sig.bind(*c.args, **c.kwargs).arguments for c in adiabat.call_args_list)
+        if b.get('icb_mass') == 0.0 and np.array_equal(b['pressure'], p)
+    )  # the liquid branch of that pass
+    n = int(np.count_nonzero(m < cmb * (1 - 1e-12)))
+    pc = _cmb_point(m, p, t, cmb, n)[1]
+    r = np.asarray(kw['radii'])
+    inserted = dict(
+        kw,
+        radii=np.insert(r, n, 0.5 * (r[n - 1] + r[n])),
+        pressure=np.insert(p, n, pc),
+        mass_enclosed=np.insert(m, n, cmb),
+    )
+    exact = adiabat_of(**inserted)[n]
+    assert abs(rules[-1](pc, p[n - 1], t[n - 1]) - exact) <= 1e-6, exact
 
 
 def test_main_refuses_an_icb_rule_without_an_inner_core(setup):

@@ -1124,9 +1124,10 @@ def test_the_cmb_point_with_a_stepped_core_table_takes_the_table():
 
 
 def test_the_cmb_point_rule_takes_the_core_side_of_the_t_source():
-    """The rule of the solver for the CMB point: a core table first, else on an adiabat (a T
-    function with a liquid branch) the core gradient stepped from the last core node, else the
-    T function at the CMB radius (r^3 linear in m) and P_cmb; None without a T source."""
+    """The rule of the solver for the CMB point: a core table first, else on the full adiabat
+    (a T function with ``full`` set) the core gradient stepped from the last core node, else the
+    T function at the CMB radius (r^3 linear in m, also with NaN nodes past the core mass) and
+    P_cmb; None without a T source."""
     from zalmoxis.eos.temperature import cmb_point_temperature
     from zalmoxis.solver import _cmb_point_rule
 
@@ -1139,14 +1140,19 @@ def test_the_cmb_point_rule_takes_the_core_side_of_the_t_source():
     def adiabat(r_, P):
         return 1.0
 
-    adiabat.liquid = adiabat
+    adiabat.full = True
     step = cmb_point_temperature(nabla)(p_cmb, p[20], t[20])
     assert _cmb_point_rule(None, adiabat, r, m, cmb, nabla)(p_cmb, p[20], t[20]) == step
     assert step == pytest.approx(t_cmb, rel=1e-12)
+    adiabat.full = False  # a pass of the blend ramp: the T function itself
+    assert _cmb_point_rule(None, adiabat, r, m, cmb, nabla)(p_cmb, p[20], t[20]) == 1.0
 
     def linear(r_, P):
         return 6000.0 - 1e-3 * r_
 
     got = _cmb_point_rule(None, linear, r, m, cmb, nabla)(p_cmb, p[20], t[20])
     assert got == pytest.approx(6000.0 - 1e-3 * 2.05e6, rel=1e-12)
+    r_nan, m_nan = r.copy(), m.copy()
+    r_nan[22:], m_nan[22:] = np.nan, np.nan  # a failed stop past the core mass
+    assert _cmb_point_rule(None, linear, r_nan, m_nan, cmb, nabla)(p_cmb, p[20], t[20]) == got
     assert _cmb_point_rule(None, None, r, m, cmb, nabla) is None
