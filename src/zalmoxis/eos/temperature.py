@@ -137,8 +137,8 @@ def compute_adiabatic_temperature(
     holds the CMB, the ICB or the boundary of an ice layer is cut there into pieces that each
     take the mixture of their own layer: the CMB with ln P linear in the enclosed mass between
     the 2 nodes, the ICB at the pressure of ``core_profile.icb_pressure``, the ice boundary with
-    P linear in the enclosed mass (near the top P follows the mass above it), held at most at
-    the CMB pressure when both lie in one segment. A piece that ends on a node that lies on a
+    P linear in the enclosed mass (near the top P follows the mass above it); when the CMB and
+    the ice boundary lie in one segment, both take P linear in m, held in order. A piece that ends on a node that lies on a
     boundary takes the mixture of its middle. T is held below ``ADIABAT_P_FLOOR`` (1e5 Pa,
     where the PALEOS rock and iron tables start), and a padded node (P = 0) counts as that
     floor. T is also held over a layer without a T-dependent component and from the first
@@ -280,9 +280,12 @@ def compute_adiabatic_temperature(
         ends = [(mass_enclosed[j], pressure[j]), (m_i, pressure[i])]
         if pressure[i] > 0 and pressure[j] > 0:
             (m_lo, p_lo), (m_hi, p_hi) = sorted(ends)
-            # CMB: ln P linear in m; ICB: as its readers; ice: P linear in m (hydrostatic)
-            lp = (math.log(p_lo), math.log(p_hi))
-            p_cmb = math.exp(np.interp(cmb_mass, (m_lo, m_hi), lp))
+            # CMB: ln P linear in m; ICB: as its readers; ice: P linear in m (hydrostatic), and
+            # the CMB too when both lie in the segment, so the 2 cuts keep their order
+            ice = cmb_mass < core_mantle_mass < m_hi and core_mantle_mass in bounds
+            lp = (p_lo, p_hi) if ice else (math.log(p_lo), math.log(p_hi))
+            p_cmb = np.interp(cmb_mass, (m_lo, m_hi), lp)
+            p_cmb = float(p_cmb) if ice else math.exp(p_cmb)
             top = (cmb_mass, p_cmb) if m_lo < cmb_mass < m_hi else (m_hi, p_hi)
             cut, p_in = [], p_lo
             for b in (b for b in bounds if m_lo < b < m_hi):
