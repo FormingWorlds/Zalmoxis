@@ -352,17 +352,30 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
     """Once the adiabat has its liquid branch, every ICB update takes the liquidus root with
     m^(2/3) linear in P (m23), the mass that the superheat test and the core arrays take at that
     pressure; the passes before it take the root linear in m (8 passes of the 2480 K Fe-S core).
-    The passes before the full adiabat give the readers no CMB-point rule. On the full adiabat
-    the rule (``_cmb_point_rule``) meets the liquid branch of the solver recomputed with a node
-    at the core mass to 1e-6 K."""
+    The updates of the passes below blend 1 (blend from the solver's debug line of each pass,
+    0.75 included) give the readers no CMB-point rule, those at blend 1 a rule. On the last
+    update the rule (``_cmb_point_rule``) meets the liquid branch of the solver recomputed with a
+    node at the core mass to 1e-6 K."""
     import inspect
 
     from zalmoxis import solver as zs
     from zalmoxis.core_profile import _cmb_point
     from zalmoxis.eos.temperature import compute_adiabatic_temperature as adiabat_of
 
-    spy = mock.Mock(wraps=zs.icb_from_profile)
-    adiabat = mock.Mock(wraps=adiabat_of)
+    blend, real_debug, real_icb = [0.0], zs.logger.debug, zs.icb_from_profile
+
+    def debug(msg, *args, **kwargs):
+        if msg.startswith('Outer iter %d: adiabat blend'):
+            blend.append(args[1])
+        return real_debug(msg, *args, **kwargs)
+
+    def update(*args, **kwargs):
+        if 'm23' in kwargs:
+            blends.append(blend[-1])
+        return real_icb(*args, **kwargs)
+
+    blends, spy, adiabat = [], mock.Mock(side_effect=update), mock.Mock(wraps=adiabat_of)
+    monkeypatch.setattr(zs.logger, 'debug', debug)
     monkeypatch.setattr(zs, 'icb_from_profile', spy)
     monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
     _fes_cap(setup, caplog, max_iterations_outer=8)
@@ -370,7 +383,8 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
     m23 = [c.kwargs['m23'] for c in calls]
     assert m23[-1] is True and m23 == sorted(m23), m23
     rules = [c.kwargs['cmb_point_rule'] for c in calls]
-    assert all(r is None for r, k in zip(rules, m23) if not k) and rules[-1] is not None
+    assert 0.75 in blends and blends[-1] == 1.0, blends
+    assert [r is None for r in rules] == [b < 1.0 for b in blends], (blends, rules)
     final = [c.kwargs for c in spy.call_args_list if 'm23' not in c.kwargs]  # the core result
     assert final and final[-1]['cmb_point_rule'] is not None
     m, p, t, cmb = (np.asarray(a, dtype=float) for a in calls[-1].args[:4])
