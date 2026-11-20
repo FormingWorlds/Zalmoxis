@@ -56,14 +56,15 @@ def test_a_default_solve_is_bit_identical_to_its_reference():
     key = cpu_key()
     ref_file = DATA / f'default_solve_reference_{key}.npz'
     got = solve_arrays()
+    stored = sorted(DATA.glob('default_solve_reference_*.npz'))
+    keys = set(np.load(ref_file if ref_file.is_file() else stored[0]).files)
+    assert set(got) == keys, f'{key}: keys not in both results: {sorted(set(got) ^ keys)}'
     assert not bool(got['stopped_on_wall_clock']), f'{key}: the solve stopped on its wall clock'
     if ref_file.is_file():
         ref = np.load(ref_file)
-        assert set(got) == set(ref.files), sorted(set(got) ^ set(ref.files))
         differ = [k for k in ref.files if got[k].tobytes() != ref[k].tobytes()]
         assert not differ, f'{key}: entries not bit-identical to the reference: {differ}'
         return
-    stored = sorted(DATA.glob('default_solve_reference_*.npz'))
     near = min(stored, key=lambda f: abs(np.load(f)['radii'][-1] / got['radii'][-1] - 1))
     off = off_tolerance(got, np.load(near))
     assert not off, (
