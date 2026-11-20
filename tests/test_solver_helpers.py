@@ -179,16 +179,14 @@ class _SolveReached(Exception):
 
 
 @pytest.mark.parametrize(
-    ('ice', 'asked', 'fires'),
-    [(True, True, True), (False, True, False), (True, False, False)],
+    ('ice', 'asked'),
+    [(True, True), (False, True), (True, False)],
     ids=['three_layers_adiabat', 'two_layers_adiabat', 'three_layers_no_adiabat'],
 )
-def test_main_warns_once_of_the_uncut_ice_boundary_on_an_adiabat(
-    monkeypatch, caplog, ice, asked, fires
-):
-    """A solve that integrates the adiabat itself with an ice layer logs 1 warning that the
-    boundary between the mantle and the ice layer is not cut, naming the known limit and its
-    docs page; a 2-layer planet or a solve without the adiabat logs none."""
+def test_main_logs_no_uncut_boundary_warning(monkeypatch, caplog, ice, asked):
+    """The adiabat cuts the boundary between the mantle and an ice layer, so a solve with or
+    without an ice layer and with or without the adiabat logs no warning of an uncut
+    boundary."""
     from zalmoxis import solver
 
     def stop(*a, **k):
@@ -202,15 +200,11 @@ def test_main_warns_once_of_the_uncut_ice_boundary_on_an_adiabat(
         eos['ice_layer'] = 'Seager2007:H2O'
     cfg = {'layer_eos_config': eos, 'temperature_mode': 'adiabatic', 'planet_mass': 5.97e24}
     with (
-        caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'),
+        caplog.at_level(logging.WARNING, logger='fwl.zalmoxis'),
         pytest.raises(_SolveReached),
     ):
         solver.main(cfg, {}, None, '/tmp')
-    hits = [r for r in caplog.records if 'ice layer is not cut' in r.getMessage()]
-    assert len(hits) == (1 if fires else 0)
-    assert all(r.name == 'fwl.zalmoxis.solver' for r in hits)  # reaches the PROTEUS log
-    if fires:
-        assert 'adiabat_integration.md' in hits[0].getMessage()
+    assert not [r for r in caplog.records if 'not cut' in r.getMessage()]
 
 
 def test_the_layer_lags_split_the_nodes_by_the_core_rule():
