@@ -695,8 +695,8 @@ def test_a_pure_iron_core_has_its_icb_where_its_liquid_adiabat_meets_iron_meltin
 
 
 # K, from the 5 starts of the test (macOS arm64): about 3 x the largest miss
-ICB_NODE_BOUND = 3.0  # first inner-core node (largest 1.06 K)
-ICB_CENTRE_BOUND = 1.5  # centre (largest 0.52 K)
+ICB_NODE_BOUND = 3.0  # first inner-core node (largest 0.64 K, macOS arm64)
+ICB_CENTRE_BOUND = 1.5  # centre (largest 0.49 K, macOS arm64)
 
 
 @pytest.mark.physics_invariant
