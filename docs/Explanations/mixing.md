@@ -326,7 +326,7 @@ The result reports $S$ as `icb_superheat` \[K\] ([tests](../Validation/hydrostat
 
 ### The pressure at the inner-core boundary
 
-The rule, the superheat and the adiabat cut take one pressure for one ICB mass: $P$ linear in $m^{2/3}$ between the core nodes on either side of it, with $m$ the enclosed mass, which is exact for a uniform density. When the ICB lies in the node segment of the core-mantle boundary, the upper node is the CMB point: the point at the core mass with $\ln P$ linear in $m$ between the 2 nodes of that segment. The ICB pressure is then as accurate as that point, and its error grows with the radius of the core-mantle boundary and falls with the node count. On a uniform sphere, over about 300 positions of the core-mantle boundary per band, the largest relative error of the CMB point is:
+The rule, the superheat and the adiabat cut take one pressure for one ICB mass: $P$ linear in $m^{2/3}$ between the core nodes on either side of it, with $m$ the enclosed mass, which is exact for a sphere of uniform density (not for a uniform shell above a denser centre). When the ICB lies in the node segment of the core-mantle boundary, the upper node is the CMB point: the point at the core mass with $\ln P$ linear in $m$ between the 2 nodes of that segment. The ICB pressure is then as accurate as that point, and its error grows with the radius of the core-mantle boundary and falls with the node count. On a uniform sphere, over about 300 positions of the core-mantle boundary per band, the largest relative error of the CMB point is:
 
 | $r_\mathrm{CMB}/R$ | 11 nodes | 41 nodes | 150 nodes |
 |---|---|---|---|

@@ -29,7 +29,8 @@ _RTOL_LAYER = 1e-12  # the layer rule of structure_model.get_layer_mixture
 
 def icb_pressure(mass, pressure, icb_mass):
     """Pressure [Pa] at ``icb_mass`` [kg] with P linear in m^(2/3) between the nodes of
-    ascending ``mass`` [kg], exact for a uniform density between 2 core nodes. Every ICB
+    ascending ``mass`` [kg], exact while the density is uniform from the centre to the outer
+    node (a uniform sphere), not for a uniform shell above a denser centre. Every ICB
     reader and the adiabat cut take it on the core nodes and the CMB point of ``_cmb_point``
     (ln P linear in m), so they share one pressure for one ICB mass; in the node segment of
     the CMB it is as accurate as that point. ``core_arrays`` moves it to its CMB node where
@@ -192,11 +193,11 @@ def core_arrays(result, layer_mixtures, rhs, temperature_at, icb_mass, solid_abo
         The node at the core mass takes the core side of the layer rule for its phase and
         density. ``R_icb`` takes r^3 linear in m on the node segment of M_ic, exact for
         uniform density. ``P_icb`` takes P linear in m^(2/3) on the core nodes and the CMB
-        point of ``icb_from_profile`` (ln P linear in m), exact for uniform density between 2
-        core nodes and in the node segment of the CMB as accurate as that point, which depends
-        on the CMB position (docs/Explanations/mixing.md). It is never below the pressure of
-        the CMB node, and a full inner core takes that pressure; the ICB readers then miss
-        ``P_icb`` by that move, and a move above 1e-3 relative logs a warning.
+        point of ``icb_from_profile`` (ln P linear in m), exact while the density is uniform
+        from the centre, and in the node segment of the CMB as accurate as that point, which
+        depends on the CMB position (docs/Explanations/mixing.md). It is never below the
+        pressure of the CMB node, and a full inner core takes that pressure; the ICB readers
+        then miss ``P_icb`` by that move, and a move above 1e-3 relative logs a warning.
         ``w_layers`` maps each core layer to its light-element fractions.
 
     Raises
