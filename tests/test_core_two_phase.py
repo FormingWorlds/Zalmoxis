@@ -1103,6 +1103,25 @@ def test_the_cmb_point_of_a_two_gradient_adiabat_takes_the_core_gradient():
     assert abs(icb_superheat(m, p, t, cmb, _simon, cmb)[0] - want) > 1.0
 
 
+def test_icb_misses_reads_the_root_with_the_cmb_point_rule():
+    """``icb_misses`` passes ``cmb_point_rule`` to the root: with a liquidus that crosses the
+    core power law in the middle of the CMB segment, the rule moves the root by more than 1e-2 of
+    the core mass, and the miss of that root is 0 only when the rule reaches the reader."""
+    from zalmoxis.core_profile import icb_misses
+    from zalmoxis.eos.temperature import cmb_point_temperature
+
+    m, p, t, cmb, p_cmb, _ = _two_gradient_sphere()
+    p_x = math.sqrt(p[m < cmb][-1] * p_cmb)
+
+    def liq(P):
+        return float(_liquid(5500.0, 0.4, p_x)) * (np.asarray(P) / p_x) ** 0.5
+
+    rule = cmb_point_temperature(lambda P, T: 0.4)
+    root = icb_from_profile(m, p, t, cmb, liq, cmb_point_rule=rule)[0]
+    assert icb_misses(m, p, t, cmb, liq, root, None, rule) == (0.0, 0.0)
+    assert icb_misses(m, p, t, cmb, liq, root, None)[0] > 1e-2 * cmb
+
+
 @pytest.mark.physics_invariant
 def test_the_cmb_point_with_a_stepped_core_table_takes_the_table():
     """Case V3 of the CMB point. A core table 150 K above the mantle T at the CMB point: the CMB
