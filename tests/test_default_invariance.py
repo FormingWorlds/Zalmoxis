@@ -108,3 +108,13 @@ def test_the_tolerance_band_holds_the_reference_and_refuses_a_wider_gap():
     cut = dict(got, stopped_on_wall_clock=np.bool_(True))
     assert off_tolerance(cut, mac) == ['stopped_on_wall_clock']
     assert off_tolerance(dict(got, p_center=np.float64(np.nan)), mac) == ['p_center']
+
+
+@pytest.mark.unit
+def test_a_result_key_missing_from_the_reference_or_the_solve_is_off():
+    """A new or a lost result key fails the comparison on a host without a stored reference."""
+    mac = np.load(DATA / 'default_solve_reference_darwin-arm64.npz')
+    got = dict(mac)
+    assert off_tolerance(dict(got, new_key=np.float64(1.0)), mac) == ["keys ['new_key']"]
+    lost = {k: v for k, v in got.items() if k != 'density'}
+    assert off_tolerance(lost, mac) == ["keys ['density']"]
