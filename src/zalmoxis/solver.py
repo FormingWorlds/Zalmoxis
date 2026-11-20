@@ -639,19 +639,17 @@ _REFUSED = {
 
 def _cmb_point_rule(core_table, t_func, radii, mass, cmb_mass, core_nabla):
     """T rule of the CMB point of the ICB readers (``core_profile.icb_from_profile``), from the
-    core side of the T source of a pass: the caller core table; on an adiabat (``t_func`` with
-    a liquid branch) the core gradient ``core_nabla(P, T)`` stepped from the last core node
+    core side of the T source of a pass: the caller core table; on the full adiabat (``t_func``
+    with ``full`` set) the core gradient ``core_nabla(P, T)`` stepped from the last core node
     (``cmb_point_temperature``); else ``t_func`` at the CMB radius, with r^3 linear in the
     enclosed mass; None without a T function."""
     if core_table is not None:
         return lambda p, *_: float(core_temperature(p, core_table))
-    if hasattr(t_func, 'liquid'):
+    if getattr(t_func, 'full', False):
         return cmb_point_temperature(core_nabla)
     if t_func is None:
         return None
-    r, m = np.asarray(radii, dtype=float), np.asarray(mass, dtype=float)
-    ok = np.isfinite(r) & np.isfinite(m)  # a failed stop fills the outer nodes with NaN
-    r_cmb = float(np.interp(cmb_mass, m[ok], r[ok] ** 3)) ** (1.0 / 3.0)
+    r_cmb = float(np.interp(cmb_mass, mass, np.asarray(radii) ** 3)) ** (1.0 / 3.0)
     return lambda p, *_: float(t_func(r_cmb, p))
 
 
@@ -2293,10 +2291,12 @@ def _solve(
         )
 
     def _cmb_T(r, m):
-        # T rule of the CMB point of the ICB readers on the profile (r, m) of this pass
-        return _cmb_point_rule(
-            core_temperature_arrays, _temperature_func, r, m, cmb_mass, _core_nabla
-        )
+        # T rule of the CMB point of the ICB readers on the profile (r, m) of this pass; the
+        # passes before the full adiabat keep the interpolation (they only seed later passes)
+        f = _temperature_func
+        if temperature_mode == 'adiabatic' and not getattr(f, 'full', False):
+            f = None
+        return _cmb_point_rule(core_temperature_arrays, f, r, m, cmb_mass, _core_nabla)
 
     # Adiabat blending state.
     _using_adiabat = False
@@ -2535,7 +2535,8 @@ def _solve(
                     return t_of
 
                 def _layered(T):
-                    # the mantle table, with .core the core table that the core nodes read
+                    # the mantle table, with .core the core table that the core nodes read and
+                    # .full set on the full adiabat (blend 1)
                     mantle, core = _layer_tables(
                         prev_pressure,
                         T,
@@ -2545,6 +2546,7 @@ def _solve(
                         temperature_mode == 'adiabatic_from_cmb',
                     )
                     f = _table_t(*mantle)
+                    f.full = _adiabat_blend >= 1.0
                     if core is not None:
                         f.core = _table_t(*core, low=True)
                     return f
