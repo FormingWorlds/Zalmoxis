@@ -440,7 +440,9 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False, boundary=None):
     the cell: the deeper node for an adiabat integrated inward, and the node outside it (next
     in the node order, along which P falls) for one integrated ``outward`` from the CMB. When an
     unpadded cell holds the ice boundary mass ``boundary`` [kg], its pressure is one more
-    shell point, so the lookup does not interpolate across the change of slope there.
+    shell point, so the lookup does not interpolate across the change of slope there. A deeper
+    node segment that holds it gains the point at its pressure (P linear in m), with T from
+    ``top_shell`` stepped from the outer node of the segment.
 
     Padded top (P <= 0 at the outer node): the cell runs from ``ADIABAT_P_FLOOR`` to the lowest
     positive node, from the T of the padded node. Unpadded top: from the top node (from the
@@ -452,6 +454,13 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False, boundary=None):
     P, Ts = pressure[s][keep], T[s][keep]
     pad = pressure[-1] <= 0
     j = 0 if pad else 1  # the deeper node of the cell
+    ms = mass[s][keep]
+    k = np.flatnonzero((ms[:-1] > boundary) & (ms[1:] < boundary)) if boundary else []
+    if len(k) and k[0] >= j:  # the ice boundary inside a segment below the top cell
+        k = int(k[0])
+        p_b = np.interp(boundary, (ms[k + 1], ms[k]), (P[k + 1], P[k]))
+        t_b = top_shell(np.array([P[k], p_b]), Ts[k], np.array([ms[k], boundary]))[-1]
+        P, Ts, ms = (np.insert(a, k + 1, v) for a, v in ((P, p_b), (Ts, t_b), (ms, boundary)))
     if P.size <= j:
         return np.log10(P), Ts
     lo = ADIABAT_P_FLOOR if pad else max(P[0], ADIABAT_P_FLOOR)
@@ -460,7 +469,6 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False, boundary=None):
         k = int(np.log10(P[0]) < np.log10(lo))  # a top node below the floor stays
         # min: a guard if P is not in node order
         node = min(s[keep][j] + int(outward), mass.size - 1)
-        ms = mass[s][keep]
         if not pad and boundary is not None and ms[j] < boundary < ms[0]:
             p_b = np.interp(boundary, (ms[j], ms[0]), (P[j], P[0]))
             q = np.union1d(q, p_b) if lo < p_b < P[j] else q
