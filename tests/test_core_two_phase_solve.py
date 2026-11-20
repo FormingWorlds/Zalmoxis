@@ -417,6 +417,8 @@ def test_a_core_wholly_above_or_below_the_liquidus(setup, t, all_solid):
     core = res['core']
     assert core['M_ic'] == (res['cmb_mass'] if all_solid else 0.0)
     assert np.all(core['phase'] == int(all_solid))  # the node at the core mass too
+    if all_solid:  # a full inner core takes the pressure of the CMB node (core_arrays)
+        assert core['P_icb'] == core['P'][-1]
 
 
 def test_solid_above_a_liquid_centre_is_reported(setup):
