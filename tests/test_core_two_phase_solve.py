@@ -914,3 +914,43 @@ def test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools(setup, re
     if cpu_key() != PLOT_CPU and request.config.getoption('validation_plots') is None:
         return  # the inner-core fractions differ by up to 0.006 between CPUs; the asserts hold
     request.getfixturevalue('validation_plot')(figure, 'core_two_phase_pure_iron_freezing_band')
+
+
+def _solid_nabla_ratio(setup, lo, hi):
+    """nabla_ad of the solid side table from its s column, -(ds/dln P)_T / (ds/dln T)_P by
+    centred node differences, over its nabla_ad column, at the T node nearest the Anzellini
+    liquidus, on the pressure nodes from ``lo`` to ``hi`` [Pa]."""
+    from zalmoxis.melting_curves import iron_melting_anzellini13
+
+    d = np.loadtxt(setup[0][SOL]['eos_file'], usecols=range(9), comments='#')
+    p, t = np.unique(d[:, 0]), np.unique(d[:, 1])
+    s, nab = (d[:, k].reshape(len(p), len(t)) for k in (4, 8))
+    out = []
+    for i in np.flatnonzero((p >= lo) & (p <= hi)):
+        j = int(np.argmin(abs(np.log(t / iron_melting_anzellini13(p[i])))))
+        dsp = (s[i + 1, j] - s[i - 1, j]) / math.log(p[i + 1] / p[i - 1])
+        dst = (s[i, j + 1] - s[i, j - 1]) / math.log(t[j + 1] / t[j - 1])
+        out.append(-dsp / dst / nab[i, j])
+    return np.array(out)
+
+
+@pytest.mark.physics_invariant
+def test_the_solid_iron_table_meets_the_maxwell_relation_outside_200_to_440_gpa(setup):
+    """Near the liquidus, from 110 to 200 GPa and from 440 to 600 GPa, the isentrope of the s
+    column of the solid side table has the slope of its nabla_ad column within 1 %."""
+    for lo, hi in ((110e9, 200e9), (440e9, 600e9)):
+        r = _solid_nabla_ratio(setup, lo, hi)
+        assert r.size >= 4 and np.all(np.abs(r - 1.0) < 0.01), (lo, r)
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason='known limit: the solid iron table of PALEOS breaks the Maxwell relation of its '
+    'entropy from about 205 to 400 GPa (ICB Validation, Known limits)',
+)
+def test_the_solid_iron_table_meets_the_maxwell_relation_from_200_to_440_gpa(setup):
+    """The same comparison from 200 to 440 GPa, where the s column gives a slope of the wrong
+    sign at several nodes."""
+    r = _solid_nabla_ratio(setup, 200e9, 440e9)
+    assert r.size >= 4 and np.all(np.abs(r - 1.0) < 0.01), r
