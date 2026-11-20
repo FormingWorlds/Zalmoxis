@@ -951,6 +951,8 @@ def test_the_solid_iron_table_meets_the_maxwell_relation_outside_200_to_440_gpa(
 )
 def test_the_solid_iron_table_meets_the_maxwell_relation_from_200_to_440_gpa(setup):
     """The same comparison from 200 to 440 GPa, where the s column gives a slope of the wrong
-    sign at several nodes."""
+    sign at several nodes; there the nabla_ad column also lies 1.5 to 6.3 % below
+    alpha P / (rho cp) of the table (default grid, 5230 K): from an ICB at 282 GPa and 5779 K
+    the 2 give centre temperatures 29 K apart at 407 GPa."""
     r = _solid_nabla_ratio(setup, 200e9, 440e9)
     assert r.size >= 4 and np.all(np.abs(r - 1.0) < 0.01), r
