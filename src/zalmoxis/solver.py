@@ -627,6 +627,15 @@ def _short_of_adiabat(result, asked):
     return bool(asked and not full)
 
 
+# the accept keys of a result that a test after the mass test refuses
+_REFUSED = {
+    'converged': False,
+    'converged_mass': False,
+    'accepted_on': None,
+    'accept_mass_limit': None,
+}
+
+
 def _check_core_table(result, table, used, mantle_T):
     """Add ``core_T_used``, ``core_T_nodes_outside`` and ``core_T_max_excess`` (``main``) to
     ``result`` when a core table ``table`` is given; an unused table counts no node. With
@@ -676,7 +685,7 @@ def _check_core_table(result, table, used, mantle_T):
             excess,
             _CORE_T_MAX_EXCESS,
         )
-        result['converged'], result['accepted_on'] = False, None
+        result.update(_REFUSED)
     return result
 
 
@@ -3373,8 +3382,7 @@ def _solve(
             _table_blend,
             temperature_mode,
         )
-        converged = converged_mass = False
-        accepted_on = accept_mass_limit = None
+        converged, converged_mass, accepted_on, accept_mass_limit = _REFUSED.values()
     icb_converged, superheat = True, None  # the ICB tests of the returned pass
     if core_liq is not None and np.all(np.isfinite(pressure)) and pressure[0] > 0:
         (miss, bound), (lag, tol), superheat = _icb_misses(
@@ -3393,7 +3401,7 @@ def _solve(
                 else '',
                 accepted_on,
             )
-            converged, converged_mass, accepted_on, accept_mass_limit = False, False, None, None
+            converged, converged_mass, accepted_on, accept_mass_limit = _REFUSED.values()
 
     # Return rho_EOS(P, T) at the returned nodes, not the damped Picard iterate.
     density_from_eos = rho_eos is not None

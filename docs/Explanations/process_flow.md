@@ -185,6 +185,8 @@ Made with `python -m tools.validation.pressure_root_sweep run <dir> -j 2`, then 
 The numerical solve is accepted when one of the tests below passes: the result then has `converged = True`, and `accepted_on` names the test, or `timeout` when the wall clock stopped the solve of the returned profile; it is None when no test passes.
 `stopped_on_wall_clock` is True when the wall clock stopped that solve, also when no test passed.
 The table band check (see [EOS physics](eos_physics.md)) runs after these tests: a band failure sets `converged = False` and keeps `accepted_on`, so read `converged` for the final verdict.
+Three later tests refuse a result that a test of the table below accepted: the refusal of a result short of the full adiabat ([below](#full-adiabat-rule)), the ICB tests of a two-layer core, and a `core_temperature_arrays` table that the core nodes leave by more than 0.1 of its pressure range.
+Each refusal sets `converged` and `converged_mass` False and `accepted_on` and `accept_mass_limit` None.
 
 | `accepted_on` | Outer solver | Test |
 |---|---|---|
@@ -252,7 +254,7 @@ So the first pass at blend 1 reads the table of the blend-0.75 pass, and the sol
 
 **A result short of the full adiabat.** When a test would accept such a result, the solve refuses it:
 
-- the result has `converged = False`, `converged_mass = False` and `accepted_on` None;
+- the result has `converged = False`, `converged_mass = False`, and `accepted_on` and `accept_mass_limit` None;
 - the solve logs a warning (at DEBUG for a step of the Newton outer solver);
 - `main` then retries, and does not skip the retry on `retry_skip`;
 - `main` raises `StructureInvariantError` on an accepted result in such a mode below blend 1 or on a table below blend 1.
