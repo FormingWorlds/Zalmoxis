@@ -967,7 +967,9 @@ def main(
         full-adiabat pass (``adiabat_blend`` and ``adiabat_table_blend`` 1) is accepted, on its
         strict test only when the pass that built the table was itself within
         ``tolerance_outer`` in mass; the table is read by layer (the core part at core masses)
-        and continued past its ends with the adiabat slope of its end intervals; and
+        and continued past its high-pressure end with the adiabat slope of its end interval,
+        the core part also past its low-pressure end, while the mantle part holds its
+        low-pressure end T; and
         ``adiabat_self_consistency`` gives the largest difference in K between the returned
         mantle T and the adiabat recomputed on the returned structure (None below blend 1),
         and ``adiabat_self_consistency_core`` the same at the core nodes, whose T comes from

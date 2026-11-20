@@ -106,7 +106,8 @@ A node, or a point of the density integration, reads the core part when its encl
 
 The 2 parts share no node, so a mantle point never interpolates between a mantle and a core temperature.
 This also holds when the CMB of the current pass lies at another pressure than that of the table, which happens on every pass whose structure still moves.
-Above the top of a part, and below the bottom of the core part, $\log_{10} T$ continues linearly in $\log_{10} P$ with the slope of the end interval of that part.
+Past the high-pressure end of a part, and past the low-pressure end of the core part, $\log_{10} T$ continues linearly in $\log_{10} P$ with the slope of the end interval of that part.
+Past its low-pressure end the mantle part holds the temperature of that end.
 So the centre of a pass with a higher central pressure than the table takes a rising temperature, not the end value of the table.
 
 A table built on a pass far from the planet mass puts its CMB at the wrong pressure.
