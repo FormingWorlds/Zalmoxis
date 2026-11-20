@@ -650,10 +650,11 @@ def test_a_p_icb_moved_by_more_than_1e_3_logs_a_warning(caplog, n, scale, frac, 
 
     res, rhs = _sphere_result(n, scale)
     mix = {'core': LayerMixture([LIQ], [1.0]), 'inner_core': LayerMixture([SOL], [1.0])}
-    with caplog.at_level(logging.WARNING, logger='zalmoxis.core_profile'):
+    with caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.core_profile'):
         core_arrays(res, mix, rhs, lambda r, p_: 5000.0, frac * res['cmb_mass'], 0.0)
     hits = [r for r in caplog.records if 'P_icb' in r.getMessage()]
     assert len(hits) == (1 if warns else 0)
+    assert all(r.name == 'fwl.zalmoxis.core_profile' for r in hits)  # reaches the PROTEUS log
 
 
 _P_TP, _T_TP, _Q = 98.5e9, 3712.0, 1 / 1.72  # triple point and 1/c of Anzellini et al. (2013)
