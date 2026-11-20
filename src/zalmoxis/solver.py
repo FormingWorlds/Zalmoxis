@@ -852,8 +852,10 @@ def _report_table_bands(
     T = np.asarray(result['temperature'], dtype=float)
     rtol = 1e-12  # the layer rule of structure_model.get_layer_mixture
     mantle = m >= result['cmb_mass'] * (1.0 - rtol)
+    ice = np.zeros(len(P), bool)
     if 'ice_layer' in layer_mixtures:
-        mantle &= m < result['core_mantle_mass'] * (1.0 - rtol)
+        ice = m >= result['core_mantle_mass'] * (1.0 - rtol)
+        mantle &= ~ice
     sol, liq = melting_curves_functions or (lambda p: np.nan,) * 2
     t_sol, t_liq = np.full(len(P), np.nan), np.full(len(P), np.nan)
     t_sol[mantle] = [sol(p) for p in P[mantle]]
@@ -866,11 +868,13 @@ def _report_table_bands(
     if config_params.get('temperature_mode') == 'adiabatic_from_cmb':
         cmb = max(1, min(int(np.searchsorted(m, result['cmb_mass'])), len(P) - 1))
         step = (inner > ADIABAT_P_FLOOR) & (outer < np.inf)  # a NaN or inf end is not stepped
-        grad[:-1] = mantle[1:] & step & (np.arange(1, len(P)) > cmb)
-    else:  # the segment across the CMB also reads the mantle node above it
+        # the segment cut at the ice boundary reads its mantle node too
+        grad[:-1] = (mantle[1:] | (mantle[:-1] & ice[1:])) & step & (np.arange(1, len(P)) > cmb)
+    else:  # the segment across the CMB reads the mantle node above it; the one cut at the
+        # ice boundary starts its mantle piece there, not at the ice node above it
         core = m < result['cmb_mass'] * (1.0 - rtol)
         span = (inner >= ADIABAT_P_FLOOR) & (outer >= ADIABAT_P_FLOOR)
-        grad[1:] = (mantle[:-1] | (core[:-1] & mantle[1:])) & span
+        grad[1:] = ((mantle[:-1] & ~ice[1:]) | (core[:-1] & mantle[1:])) & span
     bad = mantle & ~(np.isfinite(P) & np.isfinite(T))
     reads = {
         'solid': mantle & (undefined | (T <= t_sol) | (T < t_liq)),

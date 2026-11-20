@@ -282,18 +282,19 @@ class TestReportTableBands:
         )
         assert res['table_band_excess'][melt][0] == 2
 
-    def test_non_finite_gradient_node_above_the_mantle_fails(self, mats):
-        """The surface-anchored adiabat reads the first ice node; a NaN there fails the check."""
+    def test_the_first_ice_node_is_not_a_gradient_read(self, mats):
+        """The surface-anchored adiabat cuts the segment at the ice boundary and starts the
+        mantle piece at the boundary pressure, so the first ice node is no gradient read: a NaN
+        there leaves the gradient count at 0, and a NaN at the mantle node below it fails it."""
         md, _, grad, _ = mats
-        res = _result(
-            [0, 2000.0, 2000.0, np.nan],
-            m=(1.0, 2.0, 3.0, 4.0),
-            ice='Seager2007:H2O',
-            adiabat=True,
-        )
-        res['core_mantle_mass'] = 3.5
-        _check(res, md, _curves(100.0, 200.0))
-        assert res['table_band_excess'][grad] == (1, np.inf) and res['converged'] is False
+        for T, want in (
+            ([0, 2000.0, 2000.0, np.nan], (0, 0.0)),
+            ([0, 2000.0, np.nan, 2000.0], (1, np.inf)),
+        ):
+            res = _result(T, m=(1.0, 2.0, 3.0, 4.0), ice='Seager2007:H2O', adiabat=True)
+            res['core_mantle_mass'] = 3.5
+            _check(res, md, _curves(100.0, 200.0))
+            assert res['table_band_excess'][grad] == want, (T, res['table_band_excess'][grad])
 
     def test_main_rejects_a_bad_limit_before_the_solve(self, monkeypatch):
         """A non-numeric max_band_excess stops main() before any solve runs."""
