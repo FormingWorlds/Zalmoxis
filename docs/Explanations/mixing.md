@@ -297,7 +297,7 @@ The fractions of a light-element core are given explicitly for every component, 
 
 ## Two-layer core
 
-Which part of the core is solid, and which density does each part take? With the `[EOS]` key `inner_core` set, the core has 2 layers: a solid inner core and a liquid outer core. The inner-core boundary (ICB) lies between them.
+Which part of the core is solid, and which density does each part take? With the `[EOS]` key `inner_core` set, the core has 2 layers: a solid inner core and a liquid outer core. The inner-core boundary (ICB) lies between them; the core-mantle boundary (CMB) is the top of the outer core.
 
 ### The 2 sides of the iron table
 
@@ -331,7 +331,7 @@ The result reports $S$ as `icb_superheat` \[K\] ([the ICB on an adiabat](../Vali
 
 ### The pressure at the inner-core boundary
 
-The rule, the superheat and the adiabat cut take one pressure for one ICB mass: $P$ linear in $m^{2/3}$ between the core nodes on either side of it, with $m$ the enclosed mass, which is exact for a sphere of uniform density (not for a uniform shell above a denser centre). When the ICB lies in the node segment of the core-mantle boundary, the upper node is the CMB point: the point at the core mass with $\ln P$ linear in $m$ between the 2 nodes of that segment. The ICB pressure is then as accurate as that point, and its error grows with the radius of the core-mantle boundary and falls with the node count. On a uniform sphere, over about 300 positions of the core-mantle boundary per band, the largest relative error of the CMB point is:
+The rule, the superheat and the adiabat cut take one pressure for one ICB mass: $P$ linear in $m^{2/3}$ between the 2 core nodes on either side of it (a node segment is the stretch between 2 neighbouring grid nodes), with $m$ the enclosed mass, which is exact for a sphere of uniform density (not for a uniform shell above a denser centre). When the ICB lies in the node segment of the core-mantle boundary, the upper node is the CMB point: the point at the core mass with $\ln P$ linear in $m$ between the 2 nodes of that segment. The ICB pressure is then as accurate as that point, and its error grows with the radius of the core-mantle boundary and falls with the node count. On a uniform sphere, over about 300 positions of the core-mantle boundary per band, the largest relative error of the CMB point is:
 
 | $r_\mathrm{CMB}/R$ | 11 nodes | 41 nodes | 150 nodes |
 |---|---|---|---|
@@ -346,24 +346,25 @@ The pressure of the uniform sphere falls to 0 at its surface, so the last row ov
 
 ### The temperature at the CMB point
 
-Which temperature does the ICB rule use at the core-mantle boundary?
+Which temperature do the ICB readers use at the core-mantle boundary (CMB)?
 In short: the temperature of the core side of the profile, not a mix of the core and the mantle.
+The point changes the ICB only through passes whose ICB lies in the node segment of the CMB, above the last core node, and it sets whether that segment counts in `solid_above_icb_mass_fraction`.
 
-The CMB point is the point at the core mass between the last core node and the first mantle node; [the pressure at the inner-core boundary](#the-pressure-at-the-inner-core-boundary) gives its pressure.
 The ICB readers are the functions that find or test the ICB on a profile: `icb_from_profile`, `icb_superheat` and `icb_misses`.
-They need a temperature at the CMB point, and they take it from the core side of the temperature source of the outer pass, the profile that gives each node of the pass its temperature:
+They need a temperature at the CMB point, the point at the core mass between the last core node and the first mantle node; [the pressure at the inner-core boundary](#the-pressure-at-the-inner-core-boundary) gives its pressure.
+They take it from the core side of the temperature source of the outer pass, the profile that gives each node of the pass its temperature:
 
 - on the full adiabat, the core gradient stepped outward from the last core node to the pressure of the point, the step that the adiabat takes on that piece of the segment;
 - with a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller), the table at that pressure;
-- with another temperature function, that function at the CMB radius, with $r^3$ linear in the enclosed mass.
+- with another temperature function, such as one that a coupled model gives, that function at the CMB radius, with $r^3$ linear in the enclosed mass.
 
-$T$ linear in $\ln P$ between the last core node and the first mantle node mixes the mantle gradient into the point.
-The passes of an adiabatic solve before the full adiabat (the linear first guess and the blend ramp) keep that line: they are never accepted and only start the passes that follow.
-A caller of `icb_from_profile` that passes no rule (`cmb_point_rule`) also gets the line.
+The simple alternative is the interpolation rule: $T$ linear in $\ln P$ between the last core node and the first mantle node, which mixes the mantle gradient into the point.
+The early passes of a solve that computes its own adiabat (the linear first guess and the blend ramp) use the interpolation rule; they are never accepted.
+A caller of `icb_from_profile` that passes no `cmb_point_rule` also gets it.
 
-**Worked example.** On the 4 stored solves of `input/default.toml` the line puts the point 3.7 to 3.9 K above the adiabat computed with a node at the core mass, and the core-side step meets that adiabat to $10^{-10}$ K.
+**Worked example.** On the 4 stored solves of `input/default.toml`, the interpolation rule puts the point 3.7 to 3.9 K above the adiabat computed with an extra node at the core mass. The core-side step meets that adiabat to $10^{-10}$ K; the test asserts $10^{-6}$ K.
 
-**Where this is checked.** [Given profiles, refused accepts and bounds of the rule](../Validation/hydrostatic_structure.md#given-profiles-refused-accepts-and-bounds-of-the-rule) for the rule, and [Known limits of the ICB cases](../Validation/hydrostatic_structure.md#known-limits-of-the-icb-cases) for its effect on the solves of a freezing band.
+**Where this is checked.** [The temperature at the CMB point](../Validation/hydrostatic_structure.md#the-temperature-at-the-cmb-point).
 
 ### Temperature
 
