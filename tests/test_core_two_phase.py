@@ -1056,3 +1056,19 @@ def test_a_one_layer_adiabat_reports_no_icb_keys():
 
     res, _ = _analytic_ramp(structure=_canned_structure, max_iterations_outer=6)
     assert res['icb_superheat'] is None and res['icb_adiabat'] is None
+
+
+def test_a_full_inner_core_takes_the_cmb_node_pressure_above_the_reader():
+    """A full inner core takes the pressure of the CMB node of the core arrays also where the
+    CMB point of the ICB readers lies above it (the first mantle node raised to the pressure of
+    the last core node)."""
+    res, rhs = _sphere_result(41, 1.9)
+    m, cmb = res['mass_enclosed'], res['cmb_mass']
+    n = int(np.count_nonzero(m < cmb))
+    res['pressure'] = res['pressure'].copy()
+    res['pressure'][n] = res['pressure'][n - 1]
+    mix = {'core': LayerMixture([LIQ], [1.0]), 'inner_core': LayerMixture([SOL], [1.0])}
+    core = core_arrays(res, mix, rhs, lambda r, p_: 5000.0, cmb, 0.0)
+    reader = icb_from_profile(m, res['pressure'], res['temperature'], cmb, _liq, cmb)[1]
+    assert reader > core['P'][-1] * (1.0 + 1e-6)  # the case that max(reader, P[-1]) gets wrong
+    assert core['P_icb'] == core['P'][-1]
