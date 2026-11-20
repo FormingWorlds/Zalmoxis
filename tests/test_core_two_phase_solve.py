@@ -414,14 +414,18 @@ def test_solve_ignores_a_liquidus_without_an_inner_core(setup):
     assert res['core']['M_ic'] == 0.0
 
 
-@pytest.mark.parametrize('frac', [np.float32(0.05)])
+@pytest.mark.parametrize('frac', [np.float32(0.05), 0.0, 1.0])
 def test_a_given_inner_core_mass_sets_the_icb(setup, frac):
-    """The ICB lies at the given mass in double precision; a NumPy float32 fraction covers the
-    float case too, since its value enters through float(frac)."""
+    """The ICB lies at the given mass in double precision, also at the ends of the range (no
+    inner core, a full one); a NumPy float32 fraction covers the float case too, since its
+    value enters through float(frac)."""
     res = _solve(setup, inner=SOL, core_liquidus='', inner_core_mass_fraction=frac)
     core = res['core']
     assert core['M_ic'] == float(frac) * res['cmb_mass'] and isinstance(core['M_ic'], float)
     inner = core['phase'] == 1
+    if frac == 1.0:  # the node at the core mass takes the core side, here the inner core
+        assert inner.all()
+        return
     assert np.all(core['m'][inner] < core['M_ic'])
     assert np.all(core['m'][~inner] >= core['M_ic'] * (1 - 1e-12))
 

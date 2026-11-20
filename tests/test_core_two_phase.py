@@ -944,6 +944,15 @@ def test_a_given_icb_mass_counts_no_solid_below_it():
     assert solid < m[-1] - m_icb + 0.1e24
 
 
+@pytest.mark.parametrize('node', [0, 10])
+def test_the_solid_above_an_icb_at_a_node_counts_the_segment_from_that_node(node):
+    """On a core below the liquidus everywhere, an ICB mass at the centre (0) or at a node
+    counts every segment from that node up: the solid is the mass from it to the top node."""
+    m, p, t = _profile(lambda p: 0 * p + 3000.0)
+    solid = icb_from_profile(m, p, t, 1e24, _liq, float(m[node]))[2]
+    assert solid == pytest.approx(m[-1] - m[node], rel=1e-14)
+
+
 def test_the_solid_picker_keeps_the_delta_boundary_of_paleos():
     """PALEOS takes bcc delta iron up to and including 5.2 GPa above T_delta_gamma (1998 K
     there): the picker gives delta at exactly 5.2 GPa and gamma just above it."""
