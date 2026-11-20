@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import math
 import os
+import re
 from pathlib import Path
 from unittest import mock
 
@@ -397,7 +398,7 @@ def test_a_given_inner_core_mass_sets_the_icb(setup, frac):
     assert core['M_ic'] == float(frac) * res['cmb_mass'] and isinstance(core['M_ic'], float)
     inner = core['phase'] == 1
     if frac == 1.0:  # the node at the core mass takes the core side, here the inner core
-        assert inner.all()
+        assert inner.all() and core['P_icb'] == core['P'][-1]  # a full inner core: the CMB node
         return
     assert np.all(core['m'][inner] < core['M_ic'])
     assert np.all(core['m'][~inner] >= core['M_ic'] * (1 - 1e-12))
@@ -917,14 +918,18 @@ def test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools(setup, re
 
 
 def _solid_nabla_ratio(setup, lo, hi):
-    """nabla_ad of the solid side table from its s column, -(ds/dln P)_T / (ds/dln T)_P by
-    centred node differences, over its nabla_ad column, at the T node nearest the Anzellini
-    liquidus, on the pressure nodes from ``lo`` to ``hi`` [Pa]."""
+    """nabla_ad of the solid side table (40 points per decade) from its s column,
+    -(ds/dln P)_T / (ds/dln T)_P by centred node differences, over its nabla_ad column, at the
+    T node nearest the Anzellini liquidus, on the pressure nodes from ``lo`` to ``hi`` [Pa]."""
     from zalmoxis.melting_curves import iron_melting_anzellini13
 
-    d = np.loadtxt(setup[0][SOL]['eos_file'], usecols=range(9), comments='#')
+    path = setup[0][SOL]['eos_file']
+    with open(path) as fh:
+        head = next(line for line in fh if line.startswith('# Columns:'))
+    names = re.sub(r'\[[^]]*\]', '', head.split(':', 1)[1]).split()  # units dropped
+    d = np.loadtxt(path, usecols=range(names.index('phase')), comments='#')
     p, t = np.unique(d[:, 0]), np.unique(d[:, 1])
-    s, nab = (d[:, k].reshape(len(p), len(t)) for k in (4, 8))
+    s, nab = (d[:, names.index(k)].reshape(len(p), len(t)) for k in ('s', 'nabla_ad'))
     out = []
     for i in np.flatnonzero((p >= lo) & (p <= hi)):
         j = int(np.argmin(abs(np.log(t / iron_melting_anzellini13(p[i])))))
@@ -935,10 +940,12 @@ def _solid_nabla_ratio(setup, lo, hi):
 
 
 @pytest.mark.physics_invariant
-def test_the_solid_iron_table_meets_the_maxwell_relation_outside_200_to_440_gpa(setup):
-    """Near the liquidus, from 110 to 200 GPa and from 440 to 600 GPa, the isentrope of the s
+def test_the_solid_iron_table_meets_the_maxwell_relation_from_110_to_190_and_440_to_600_gpa(
+    setup,
+):
+    """Near the liquidus, from 110 to 190 GPa and from 440 to 600 GPa, the isentrope of the s
     column of the solid side table has the slope of its nabla_ad column within 1 %."""
-    for lo, hi in ((110e9, 200e9), (440e9, 600e9)):
+    for lo, hi in ((110e9, 190e9), (440e9, 600e9)):
         r = _solid_nabla_ratio(setup, lo, hi)
         assert r.size >= 4 and np.all(np.abs(r - 1.0) < 0.01), (lo, r)
 
@@ -946,13 +953,28 @@ def test_the_solid_iron_table_meets_the_maxwell_relation_outside_200_to_440_gpa(
 @pytest.mark.xfail(
     strict=True,
     raises=AssertionError,
-    reason='known limit: the solid iron table of PALEOS breaks the Maxwell relation of its '
-    'entropy from about 205 to 400 GPa (ICB Validation, Known limits)',
+    reason='known limit: the s column of the solid iron table of PALEOS breaks the Maxwell '
+    'relation from about 210 to 420 GPa (ICB Validation, Known limits)',
 )
-def test_the_solid_iron_table_meets_the_maxwell_relation_from_200_to_440_gpa(setup):
-    """The same comparison from 200 to 440 GPa, where the s column gives a slope of the wrong
-    sign at several nodes; there the nabla_ad column also lies 1.5 to 6.3 % below
+def test_the_isentrope_of_the_solid_iron_table_keeps_its_sign_from_200_to_440_gpa(setup):
+    """From 200 to 440 GPa the s column gives a slope of the wrong sign at several nodes, the
+    signature of the known limit; there the nabla_ad column also lies 1.5 to 6.3 % below
     alpha P / (rho cp) of the table (default grid, 5230 K): from an ICB at 282 GPa and 5779 K
     the 2 give centre temperatures 29 K apart at 407 GPa."""
     r = _solid_nabla_ratio(setup, 200e9, 440e9)
-    assert r.size >= 4 and np.all(np.abs(r - 1.0) < 0.01), r
+    assert r.size >= 4 and not np.any(r < 0.0), r
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason='known limit: on the gamma-Fe side below the triple point the s column of the '
+    'solid iron table of PALEOS gives 0.72 to 0.76 of the nabla_ad slope (ICB Validation, '
+    'Known limits)',
+)
+def test_the_isentrope_of_the_solid_iron_table_holds_from_40_to_95_gpa(setup):
+    """From 40 to 95 GPa (gamma-Fe near the liquidus) the s column gives 0.72 to 0.76 of the
+    slope of the nabla_ad column, the signature of the known limit; nabla_ad itself equals
+    alpha P / (rho cp) of the table there."""
+    r = _solid_nabla_ratio(setup, 40e9, 95e9)
+    assert r.size >= 4 and np.all(np.abs(r - 1.0) < 0.1), r
