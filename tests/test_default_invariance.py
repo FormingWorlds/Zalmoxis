@@ -120,3 +120,5 @@ def test_a_result_key_missing_from_the_reference_or_the_solve_is_off():
     assert off_tolerance(dict(got, new_key=np.float64(1.0)), mac) == ["keys ['new_key']"]
     lost = {k: v for k, v in got.items() if k != 'density'}
     assert off_tolerance(lost, mac) == ["keys ['density']"]
+    no_radii = {k: v for k, v in got.items() if k != 'radii'}  # a key the band reads
+    assert off_tolerance(no_radii, mac) == ["keys ['radii']"]
