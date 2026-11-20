@@ -348,7 +348,7 @@ The pressure of the uniform sphere falls to 0 at its surface, so the last row ov
 
 Which temperature do the ICB readers use at the core-mantle boundary (CMB)?
 In short: the temperature of the core side of the profile, not a mix of the core and the mantle.
-The point changes the ICB only through passes whose ICB lies in the node segment of the CMB, above the last core node, and it sets whether that segment counts in `solid_above_icb_mass_fraction`.
+The point changes the ICB only through passes whose ICB lies in the node segment of the CMB, above the last core node. It also sets whether that segment counts in `solid_above_icb_mass_fraction`, and for a full inner core it sets the superheat `icb_superheat` and its test.
 
 The ICB readers are the functions that find or test the ICB on a profile: `icb_from_profile`, `icb_superheat` and `icb_misses`.
 They need a temperature at the CMB point, the point at the core mass between the last core node and the first mantle node; [the pressure at the inner-core boundary](#the-pressure-at-the-inner-core-boundary) gives its pressure.

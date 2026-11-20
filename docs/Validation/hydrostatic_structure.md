@@ -576,9 +576,9 @@ This case has no plot: its 5 starts give 2 misses each, which the text states as
 
 #### The temperature at the CMB point
 
-**Why this check exists.** The ICB readers need a temperature at the CMB point, the point at the core mass inside the node segment of the CMB ([the temperature at the CMB point](../Explanations/mixing.md#the-temperature-at-the-cmb-point)). If the code takes $T$ linear in $\ln P$ between the last core node and the first mantle node (the interpolation rule), the mantle gradient enters the core temperature at that point. Each case below fails for the interpolation rule.
+**Why this check exists.** The ICB readers need a temperature at the CMB point, the point at the core mass inside the node segment of the CMB ([the temperature at the CMB point](../Explanations/mixing.md#the-temperature-at-the-cmb-point)). If the code takes $T$ linear in $\ln P$ between the last core node and the first mantle node (the interpolation rule), the mantle gradient enters the core temperature at that point.
 
-**What it tests.** Each case states the right value and how far the interpolation rule misses it:
+**What it tests.** The first 3 cases give the right value at the CMB point and fail for the interpolation rule, which misses by the stated amount. The other cases check which rule each pass gets and that an accept off the full adiabat is refused:
 
 - Uniform sphere, the CMB inside a node segment, a liquid branch with $\nabla = 0.4$ in the core and 0.2 outward of the CMB: the superheat of a full inner core is the power law of the core at the CMB point minus the liquidus there, to $10^{-10}$ of $T$. The interpolation rule misses by more than 1 K. Test: `tests/test_core_two_phase.py::test_the_cmb_point_of_a_two_gradient_adiabat_takes_the_core_gradient`.
 - The 4 stored solves of `input/default.toml`: the point meets the adiabat computed with a node inserted at the core mass to $10^{-6}$ K (self-consistency of the step). The interpolation rule misses by more than 3 K. Test: `tests/test_adiabat_real_profiles.py::test_the_cmb_point_of_the_icb_readers_is_on_the_core_adiabat`.
@@ -588,14 +588,16 @@ This case has no plot: its 5 starts give 2 misses each, which the text states as
 - The same core with 6 passes ends on a pass of the blend ramp (blend 0.5): no ICB update gets the core step, and the accept is refused; the check of an accepted pass raises `StructureInvariantError` for a T function off the full adiabat. Tests: `tests/test_core_two_phase_solve.py::test_a_cap_accept_on_the_blend_ramp_is_refused` and `tests/test_core_two_phase.py::test_an_accept_off_the_full_adiabat_raises`.
 - The same core with a caller temperature function of 5000 K: every ICB update takes 5000 K at the CMB point. Test: `tests/test_core_two_phase_solve.py::test_a_caller_temperature_function_gives_the_cmb_point_its_value`.
 
-These cases have no plot: each compares one temperature at one point.
+**How we know the right answer.** The power law of the core is a closed form, the adiabat with an extra node at the core mass is a self-consistency check of the step, and the table value comes from the input itself. These cases have no plot: each compares one temperature at one point.
+
+**Why it matters.** For an inner core that reaches the node segment of the CMB, this temperature decides between a full and a partial inner core, and for a full inner core it sets the reported superheat.
 
 **Effect on a solve (measured, no test asserts it).** The pure-iron core of the default planet, each solve started from scratch with no seed from an earlier solve; the last core node lies at 0.983 to 0.987 of the core mass. The core-side rule against the interpolation rule:
 
 | Surface temperature (K) | Core-side rule against the interpolation rule |
 |---|---|
 | 2470.5 to 2474.0 | the inner-core mass fraction differs by up to 0.011 |
-| 2471.5 to 2473.0 | the inner core fills the whole core; the interpolation rule leaves a liquid shell of 0.002 to 0.011 of the core mass |
+| 2471.5 to 2473.0 (inside the band above) | the inner core fills the whole core; the interpolation rule leaves a liquid shell of 0.002 to 0.011 of the core mass |
 | 2455, 2460, 2462.5, 2465, 2467.5, 2470, 2474.5, 2475, 2477.5 and 2480 | the structure is identical to the last bit; the superheat of a full inner core (2455 to 2470 K) is 3.4 to 3.9 K lower |
 
 With the core-side rule the inner-core fraction does not rise with the surface temperature. On the 13.85 wt% S core, all 34 steps of the 2 walks of the start-dependence scan are identical to the last bit with both rules.
