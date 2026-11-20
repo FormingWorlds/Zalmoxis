@@ -29,10 +29,11 @@ def off_tolerance(got, ref, tol=TOLERANCE_OUTER):
 
     Two converged solves have masses up to 2 tol apart; the radius and the central pressure
     scale with the mass by powers below 1, so each differs by less than 2 tol in relative terms.
-    A key in only one of the 2 results is off as well.
+    A key in only one of the 2 results is reported alone, before any value is compared.
     """
-    off = [f'keys {sorted(set(got) ^ set(ref))}'] if set(got) != set(ref) else []
-    off += [k for k in ('converged', 'converged_mass') if not bool(got[k])]
+    if set(got) != set(ref):
+        return [f'keys {sorted(set(got) ^ set(ref))}']
+    off = [k for k in ('converged', 'converged_mass') if not bool(got[k])]
     if bool(got['stopped_on_wall_clock']):
         off.append('stopped_on_wall_clock')
     if not abs(got['mass_enclosed'][-1] / ref['mass_enclosed'][-1] - 1) < 2 * tol:
