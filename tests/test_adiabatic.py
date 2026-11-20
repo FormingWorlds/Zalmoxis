@@ -1446,7 +1446,8 @@ class TestAdiabatTable:
     @pytest.mark.parametrize('p_top', [1.2e5, 9.09e4])
     def test_an_unpadded_top_cell_gains_the_shell(self, p_top):
         """An unpadded top: the cell from max(P_top, 1e5 Pa) to the next node gains the shell
-        points, from the T of the top node, at the mass of the next node; a top node below
+        points, from the T of the top node, at the masses of P linear in m between the 2 nodes
+        (here the node indices 9 and 8); a top node below
         1e5 Pa stays in the table with its T, which the adiabat holds below 1 bar, and the
         lookup over the cell is the constant-nabla law from the start of the cell."""
         from zalmoxis.solver import _TOP_SHELL_POINTS, _adiabat_table
@@ -1455,8 +1456,9 @@ class TestAdiabatTable:
         lo = max(p_top, P_FLOOR)
         T = 3000.0 * (np.maximum(P, P_FLOOR) / P_FLOOR) ** 0.1
         lp, t = _adiabat_table(P, T, np.arange(P.size), self._shell(calls))
-        ((q, T_top, i),) = calls
-        assert T_top == T[-1] and i == 8 and q.size == _TOP_SHELL_POINTS and q[0] == lo
+        ((q, T_top, m_q),) = calls
+        assert T_top == T[-1] and q.size == _TOP_SHELL_POINTS and q[0] == lo
+        np.testing.assert_array_equal(m_q, np.interp(q, (p_top, 1.1e9), (9.0, 8.0)))
         below = p_top < P_FLOOR  # the node below 1 bar keeps its place in the table
         assert lp.size == q.size + 9 + below and np.all(np.diff(lp) > 0)
         assert (lp[0], t[0]) == (math.log10(p_top), T[-1])  # lo is p_top at or above the floor
@@ -1494,20 +1496,50 @@ class TestAdiabatTable:
         ('n_pad', 'outward', 'node'),
         [(0, False, 8), (0, True, 9), (1, False, 8), (1, True, 9), (2, False, 8), (2, True, 9)],
     )
-    def test_the_shell_takes_the_mass_of_the_node_of_the_adiabat_over_the_cell(
-        self, n_pad, outward, node
-    ):
-        """The adiabat gives node i its T from node j with the mixture of node i: integrated
-        inward, the cell takes the node at its upper end (the next node of an unpadded top, the
-        lowest positive node of a padded one); integrated outward from the CMB, the node outside
-        that one (the top node, or the first padded node)."""
+    def test_the_shell_takes_the_masses_of_the_rule_over_the_cell(self, n_pad, outward, node):
+        """An unpadded cell: the shell points take the masses of P linear in m between its 2
+        nodes, either way of integration. A padded cell, which the adiabat does not cut: the
+        mass of the node whose mixture the adiabat gives it, inward the lowest positive node,
+        outward from the CMB the first padded node."""
         from zalmoxis.solver import _adiabat_table
 
         nodes = [np.geomspace(3.6e11, 1.1e9, 9), [1.2e5] * (n_pad == 0), np.zeros(n_pad)]
         calls, P = [], np.concatenate(nodes)
         mass = np.linspace(1e24, 6e24, P.size)
         _adiabat_table(P, np.full(P.size, 3000.0), mass, self._shell(calls), outward)
-        assert [c[2] for c in calls] == [mass[node]]
+        ((q, _, m_q),) = calls
+        if n_pad:
+            assert m_q == mass[node]
+        else:
+            np.testing.assert_array_equal(m_q, np.interp(q, (1.2e5, P[8]), mass[[9, 8]]))
+
+    @pytest.mark.parametrize(
+        ('top', 'f', 'added'),
+        [
+            (1.2e5, 0.5, True),
+            (1.2e5, 0.0, False),
+            (1.2e5, 1.0, False),
+            (1.2e5, 1.1, False),
+            (0.0, 0.5, False),
+        ],
+        ids=['inside', 'on_inner_node', 'on_top_node', 'outside', 'padded'],
+    )
+    def test_the_ice_boundary_pressure_is_one_more_shell_point(self, top, f, added):
+        """A boundary mass strictly inside an unpadded top cell adds its pressure, P linear in m
+        between the 2 nodes, as one more shell point at the boundary mass; on a node, outside
+        the cell or over a padded cell the shell keeps its points."""
+        from zalmoxis.solver import _TOP_SHELL_POINTS, _adiabat_table
+
+        calls, P = [], np.concatenate([np.geomspace(3.6e11, 1.1e9, 9), [top]])
+        mass = np.linspace(1e24, 6e24, P.size)
+        b = mass[8] + f * (mass[9] - mass[8])  # the top cell lies between nodes 8 and 9
+        _adiabat_table(P, np.full(P.size, 3000.0), mass, self._shell(calls), False, b)
+        ((q, _, m_q),) = calls
+        assert q.size == _TOP_SHELL_POINTS + added and np.all(np.diff(q) > 0)
+        if added:
+            p_b = np.interp(b, mass[[8, 9]], P[[8, 9]])
+            k = int(np.flatnonzero(q == p_b)[0])
+            assert m_q[k] == pytest.approx(b, rel=1e-14)
 
     def test_a_padded_top_keeps_the_table_of_the_padded_rule(self):
         """Hypothesis over padded profiles (P = 0 at the outer node), inward (surface anchor):
@@ -1610,9 +1642,10 @@ class TestAdiabatTable:
         increasing over the shell points, T paired with its node, and shell points exactly when
         the top cell (padded: 1e5 Pa to the lowest positive node; unpadded: the lowest positive
         node, at least 1e5 Pa, to the next) is wider than 1e-9, starting at the T of the padded
-        or the top node, at the mass of the deeper node of the cell or, ``outward``, of the next
-        node in the node order (the last node at most); a top node below 1e5 Pa stays in the
-        table."""
+        or the top node; a padded cell at the mass of the deeper node of the cell or,
+        ``outward``, of the next node in the node order (the last node at most), an unpadded
+        one at the masses of P linear in m between its 2 nodes; a top node below 1e5 Pa stays
+        in the table."""
         from hypothesis import example, given, settings
         from hypothesis import strategies as st
 
@@ -1646,10 +1679,14 @@ class TestAdiabatTable:
             if not shell:
                 np.testing.assert_array_equal(t, t_srt)
                 return
-            q, t0, node = calls[0]
+            q, t0, m_q = calls[0]
             assert q[0] == lo and t0 == (T[-1] if padded else t_srt[0])
-            deeper = order[P[order] > 0][0 if padded else 1]  # deeper node of the cell
-            assert node == min(deeper + outward, P.size - 1)
+            live = order[P[order] > 0]
+            if padded:  # the deeper node of the cell, or the next one outward
+                assert m_q == min(live[0] + outward, P.size - 1)
+            else:  # mass = node index here
+                want = np.interp(q, srt[:2], live[:2].astype(float))
+                np.testing.assert_array_equal(m_q, want)
             kept = int(np.log10(srt[0]) < np.log10(P_FLOOR))  # a top node below 1 bar
             tail = t_srt if padded else t_srt[1:]
             assert lp.size == q.size + tail.size + kept

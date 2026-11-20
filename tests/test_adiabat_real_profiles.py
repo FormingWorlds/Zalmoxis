@@ -429,11 +429,15 @@ def _top_cell(kw, p_top=None, layer_eos=None):
             mass, kw['cmb_mass'], kw['core_mantle_mass'], kw['layer_mixtures']
         )
 
-    lp, t = _adiabat_table(P, T, m, top_shell, kw['anchor'] == 'cmb')
+    boundary = kw['core_mantle_mass'] if layer_eos else None
+    lp, t = _adiabat_table(P, T, m, top_shell, kw['anchor'] == 'cmb', boundary)
     pad = P[-1] <= 0
     inner = int(np.flatnonzero(P > 0)[-1 if pad else -2])  # deeper node of the cell
     node = inner + 1 if kw['anchor'] == 'cmb' else inner
-    q = np.geomspace(max(P[-1], P_FLOOR), P[inner], _TOP_SHELL_POINTS + 1)
+    q = np.geomspace(max(P[-1], P_FLOOR), P[inner], _TOP_SHELL_POINTS + 1)[:-1]
+    if boundary is not None and not pad:  # the boundary pressure is one more shell point
+        q = np.union1d(q, np.interp(boundary, (m[inner], m[-1]), (P[inner], P[-1])))
+    q = np.append(q, P[inner])
     rule = (
         np.full(q.size, m[node]) if pad else np.interp(q, (P[-1], P[inner]), (m[-1], m[inner]))
     )
@@ -533,19 +537,23 @@ def test_the_top_cell_shell_meets_the_next_node_across_a_layer_boundary(
     cell outward, on both anchors. Over an unpadded cell the shell points take the masses of P
     linear in m between the 2 nodes, so the shell cuts at the boundary pressure of the adiabat;
     over a padded cell they take the mass of the node whose mixture the adiabat gives the cell.
-    The shell integrated on to the inner node meets its T within 1e-5 K, and within 1e-4 K for
-    PALEOS H2O with the CMB anchor (the midpoint step out and back over a steep cell). The
-    lookup lies within 0.5 K of a DOP853 march that changes mixture at the same pressure."""
+    The boundary pressure is one more shell point. The shell integrated on to the inner node
+    meets its T within 1e-5 K; for PALEOS H2O within 1e-4 K with the CMB anchor (the midpoint
+    step out and back) and 0.01 K with the surface anchor, where T rises by about 3500 K over
+    the cell and the shell and the node segment split their substeps differently (2.7e-3 K
+    measured, 5.5e-5 K at a 5 times smaller step). The lookup lies within 0.5 K of a DOP853
+    march that changes mixture at the same pressure."""
     if eos.startswith('PALEOS'):
         _need_paleos('EOS_PALEOS_H2O')
     kw = profiles[case][1]
     assert kw['anchor'] == ('cmb' if case == 'ic_dummy' else 'surface')
     cell = _top_cell(kw, p_top, eos)
     assert cell.layers_differ and np.array_equal(cell.mass_used, cell.mass_rule)
-    steep = eos.startswith('PALEOS') and kw['anchor'] == 'cmb'
+    cmb_anchor = kw['anchor'] == 'cmb'
     miss = float(np.max(np.abs(cell.lookup - cell.march)))
     print(f'{case} {eos}: shell end {cell.end:.3g} K, lookup minus march {miss:.3g} K')
-    assert abs(cell.end) < (1e-4 if steep else 1e-5), cell.end
+    paleos = eos.startswith('PALEOS')
+    assert abs(cell.end) < ((1e-4 if cmb_anchor else 0.01) if paleos else 1e-5), cell.end
     assert miss < 0.5, miss
 
 
