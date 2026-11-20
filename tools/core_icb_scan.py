@@ -12,7 +12,6 @@ docs/Validation/hydrostatic_structure.md.
 
 from __future__ import annotations
 
-import copy
 import json
 import os
 import sys
@@ -38,8 +37,8 @@ def scan(out, direction):
 
     md = load_material_dictionaries()
     grid = paleos_api.make_grid_at_resolution(1e9, 3e12, 1000.0, 2.0e4, 40)
-    for name in (LIQ, SOL):
-        md[name] = dict(copy.deepcopy(md[name]), grid_spec=grid)
+    side = {'format': 'paleos_api_2phase_side', 'material': 'iron', 'grid_spec': grid}
+    md[LIQ], md[SOL] = dict(side, side='liquid'), dict(side, side='solid')  # fresh, unresolved
     paleos_api_cache._cache_root = lambda: Path(out, 'cache40')
     paleos_api_cache.resolve_paleos_api_2phase_iron(grid, n_workers=4)
     for name in (LIQ, SOL):

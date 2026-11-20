@@ -8,7 +8,6 @@ scratch cache root, so no test writes the data cache.
 
 from __future__ import annotations
 
-import copy
 import math
 import os
 from pathlib import Path
@@ -42,8 +41,8 @@ def setup(tmp_path_factory):
     if not os.path.isfile(md['PALEOS:iron'].get('eos_file', '')):
         pytest.skip('PALEOS iron table not linked under data/')
     grid = paleos_api.make_grid_at_resolution(1e9, 3e12, 1000.0, 2.0e4, 40)
-    for name in (LIQ, SOL):
-        md[name] = dict(copy.deepcopy(md[name]), grid_spec=grid)
+    side = {'format': 'paleos_api_2phase_side', 'material': 'iron', 'grid_spec': grid}
+    md[LIQ], md[SOL] = dict(side, side='liquid'), dict(side, side='solid')  # fresh, unresolved
     with pytest.MonkeyPatch.context() as mp:
         root = tmp_path_factory.mktemp('paleos_api_cache')
         mp.setattr(paleos_api_cache, '_cache_root', lambda: root)
