@@ -141,7 +141,7 @@ Every solve whose profile reaches the core mass returns `result['core']` (otherw
 Every result carries 3 keys of the inner-core boundary (ICB) test, which hold values only with a two-layer core:
 
 - `icb_converged` is True unless the returned pass fails the ICB tests ([inner-core boundary](../Validation/hydrostatic_structure.md#inner-core-boundary-of-a-two-layer-core)); a solve with no ICB rule keeps True.
-- `icb_superheat` \[K\] is the superheat $S$ of the outer-core liquid at the ICB on an adiabat with `core_liquidus`: positive where the liquid lies above the melting curve and negative below it, taken at the centre with no inner core and at the core mass with a core solid to the core-mantle boundary. It is `None` on a given profile and without `core_liquidus`.
+- `icb_superheat` \[K\] is the superheat $S$ of the outer-core liquid at the ICB on an adiabat with `core_liquidus`: positive where the liquid lies above the melting curve and negative below it, taken at the centre with no inner core and, with a core solid to the core-mantle boundary, at the CMB point with the core-side temperature of [the temperature at the CMB point](../Explanations/mixing.md#the-temperature-at-the-cmb-point). It is `None` on a given profile and without `core_liquidus`.
 - `icb_adiabat` \[kg\] is the inner-core mass that the adiabat of the returned pass took. It is `None` without an adiabat or without a two-layer core.
 
 A solve with a [core temperature table](../Explanations/proteus_coupling.md#core-temperature-from-the-caller) (`core_temperature_arrays`) carries 3 more keys:

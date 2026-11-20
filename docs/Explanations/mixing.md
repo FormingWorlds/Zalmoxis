@@ -331,7 +331,14 @@ The result reports $S$ as `icb_superheat` \[K\] ([the ICB on an adiabat](../Vali
 
 ### The pressure at the inner-core boundary
 
-The rule, the superheat and the adiabat cut take one pressure for one ICB mass: $P$ linear in $m^{2/3}$ between the 2 core nodes on either side of it (a node segment is the stretch between 2 neighbouring grid nodes), with $m$ the enclosed mass, which is exact for a sphere of uniform density (not for a uniform shell above a denser centre). When the ICB lies in the node segment of the core-mantle boundary, the upper node is the CMB point: the point at the core mass with $\ln P$ linear in $m$ between the 2 nodes of that segment. The ICB pressure is then as accurate as that point, and its error grows with the radius of the core-mantle boundary and falls with the node count. On a uniform sphere, over about 300 positions of the core-mantle boundary per band, the largest relative error of the CMB point is:
+The rule, the superheat and the adiabat cut take one pressure for one ICB mass: $P$ linear in $m^{2/3}$ between the 2 core nodes on either side of it (a node segment is the stretch between 2 neighbouring grid nodes), with $m$ the enclosed mass, which is exact for a sphere of uniform density (not for a uniform shell above a denser centre). When the ICB lies in the node segment of the core-mantle boundary, the upper node is the CMB point: the point at the core mass with $\ln P$ linear in $m$ between the 2 nodes of that segment. The ICB pressure is then as accurate as that point, and its error grows with the radius of the core-mantle boundary and falls with the node count.
+The core arrays take the same pressure, with 2 exceptions: they never put `P_icb` below the pressure of their node at the core mass, which comes from the structure integration, and they give a full inner core that pressure. The ICB readers then differ from `P_icb` by that move, and a move above $10^{-3}$ of `P_icb` logs a warning. For the pure-iron core solid to the core-mantle boundary at 2460 K on 150 nodes, the CMB point lies a relative $3.0 \times 10^{-6}$ below that node.
+
+**Where this is checked.** [The rule between grid nodes](../Validation/hydrostatic_structure.md#given-profiles-refused-accepts-and-bounds-of-the-rule) and the unit tests `tests/test_core_two_phase.py::test_p_icb_in_the_cmb_segment_lies_at_or_above_the_cmb_node`, `::test_a_p_icb_moved_by_more_than_1e_3_logs_a_warning` and `::test_a_full_inner_core_takes_the_cmb_node_pressure_above_the_reader`.
+
+#### How accurate the CMB point is
+
+On a uniform sphere, over about 300 positions of the core-mantle boundary per band, the largest relative error of the CMB point is:
 
 | $r_\mathrm{CMB}/R$ | 11 nodes | 41 nodes | 150 nodes |
 |---|---|---|---|
@@ -339,27 +346,32 @@ The rule, the superheat and the adiabat cut take one pressure for one ICB mass: 
 | 0.6 to 0.8 | $9.4 \times 10^{-3}$ | $9.3 \times 10^{-4}$ | $7.5 \times 10^{-5}$ |
 | 0.8 to 0.95 | $4.1 \times 10^{-2}$ | $1.8 \times 10^{-2}$ | $2.0 \times 10^{-3}$ |
 
+The pressure of the uniform sphere falls to 0 at its surface, so the last row overstates a planet with a mantle above the core.
 On 11 nodes, a CMB above $r/R = 0.9$ lies in the top node segment, whose upper node has $P = 0$.
-No CMB point exists there, so the 11-node value of the last row covers the other 200 of its 300 positions.
-With a surface pressure of $10^{-6}$ of the centre pressure in place of 0, the error in that segment is 0.99.
-The pressure of the uniform sphere falls to 0 at its surface, so the last row overstates a planet with a mantle above the core. The core arrays take the same pressure, with 2 exceptions: they never put `P_icb` below the pressure of their node at the core mass, which comes from the structure integration, and they give a full inner core that pressure. The ICB readers then differ from `P_icb` by that move, and a move above $10^{-3}$ of `P_icb` logs a warning. For the pure-iron core solid to the core-mantle boundary at 2460 K on 150 nodes, the CMB point lies a relative $3.0 \times 10^{-6}$ below that node.
+There is no CMB point in that segment, so the 11-node value of the last row comes from the other 200 of its 300 positions.
+A surface pressure of $10^{-6}$ of the centre pressure in place of 0 gives an error of 0.99 in that segment.
 
 ### The temperature at the CMB point
 
 Which temperature do the ICB readers use at the core-mantle boundary (CMB)?
 In short: the temperature of the core side of the profile, not a mix of core and mantle.
-The point changes the ICB only through passes whose ICB lies in the node segment of the CMB, above the last core node. It also sets whether that segment counts in `solid_above_icb_mass_fraction`, and for a full inner core it sets the superheat `icb_superheat` and its test.
 
-The ICB readers are the functions that find or test the ICB on a profile: `icb_from_profile`, `icb_superheat` and `icb_misses`.
+The ICB readers find or test the ICB on a profile: `icb_from_profile`, `icb_superheat` and `icb_misses`.
 They need a temperature at the CMB point, the point at the core mass inside the node segment of the CMB; [the pressure at the inner-core boundary](#the-pressure-at-the-inner-core-boundary) gives its pressure.
-They take it from the core side of the temperature source of the outer pass:
+This temperature matters in 3 places:
 
-- on the full adiabat, the core gradient stepped outward from the last core node to the pressure of the point, the step that the adiabat takes on that piece of the segment;
-- with a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller), the table at that pressure;
-- with another temperature function, that function at the CMB radius ($r^3$ linear in the enclosed mass).
+- the ICB of a pass whose ICB lies in that node segment, above the last core node;
+- whether that segment counts in `solid_above_icb_mass_fraction`;
+- the superheat `icb_superheat` of a full inner core, and its test.
+
+The readers take it from the core side of the temperature source of the pass, in this order:
+
+1. with a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller), the table at that pressure;
+2. on the adiabat at blend 1, the core gradient stepped outward from the last core node to the pressure of the point, the reverse of the inward step of the adiabat there;
+3. with another temperature function, that function at the CMB radius ($r^3$ linear in the enclosed mass).
 
 The interpolation rule, $T$ linear in $\ln P$ between the last core node and the first mantle node, mixes the mantle gradient into the point.
-The early passes of a solve that computes its own adiabat (the linear first guess and the blend ramp), which are never accepted, use it, and so does a caller of `icb_from_profile` without a `cmb_point_rule`.
+The passes below blend 1 of a solve that computes its own adiabat (the linear first guess and the blend steps 0.25 to 0.75), which are never accepted, use it, and so does a caller of `icb_from_profile` without a `cmb_point_rule`.
 
 **Worked example.** On the 4 stored solves of `input/default.toml`, the interpolation rule puts the point 3.7 to 3.9 K above the adiabat with an extra node at the core mass; the core-side step meets it to $10^{-10}$ K (the test asserts $10^{-6}$ K).
 

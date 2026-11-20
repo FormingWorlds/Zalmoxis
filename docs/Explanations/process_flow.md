@@ -188,7 +188,7 @@ The table band check (see [EOS physics](eos_physics.md)) runs after these tests:
 3 later tests can refuse a result that a test of the table below accepted:
 
 - the [full-adiabat rule](#full-adiabat-rule), when the result does not carry the full adiabat;
-- the 2 ICB tests of a [two-layer core](mixing.md#the-inner-core-boundary);
+- the 2 ICB tests of a [two-layer core](mixing.md#how-a-solve-converges-on-one-icb);
 - the check of a [core temperature table](proteus_coupling.md#core-temperature-from-the-caller): a core node lies beyond the table by more than 0.1 of its pressure range.
 
 A refusal sets `converged` and `converged_mass` to False, and `accepted_on` and `accept_mass_limit` to None.

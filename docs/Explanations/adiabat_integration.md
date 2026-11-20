@@ -100,10 +100,10 @@ Without the cut, the segment that holds the ICB would take one of the 2 values o
 Which temperature does a core node read while the structure still changes from one outer pass to the next?
 
 An outer pass is one step of the outer loop ([Process flow](process_flow.md#iterative-solution)).
-In short: each pass reads a T(P) table built on the pass before, and the table is split at the CMB of the pass that built it, when its core holds at least 2 nodes of positive pressure and its mantle at least 2 nodes.
-A core point reads only the core part and a mantle point only the mantle part, so a mantle point never interpolates between a mantle and a core temperature.
+In short: each pass reads a T(P) table built on the pass before.
+The table has a mantle part and a core part, split at the CMB of the pass that built it.
+A core point reads only the core part, so a mantle point never interpolates between a mantle and a core temperature.
 
-One part of the table holds the mantle nodes, the other the core nodes.
 A node, or a point of the density integration, reads the core part when its enclosed mass lies below the core mass of the current pass, and the mantle part otherwise.
 This also holds when the CMB of the current pass lies at another pressure than that of the table, which happens on every pass whose structure still moves.
 When the core of the pass that built the table holds fewer than 2 nodes of positive pressure, or its mantle fewer than 2 nodes, the table is not split, and every point reads one table of all nodes.
@@ -115,6 +115,8 @@ When the core of the pass that built the table holds fewer than 2 nodes of posit
 - Past the high-pressure end of either part, $\log_{10} T$ continues linearly in $\log_{10} P$ with the slope of the end interval of that part, so the centre of a pass with a higher central pressure than the table takes a rising temperature, not the end value of the table.
 - Past the low-pressure end of the core part, it continues in the same way.
 - Past the low-pressure end of the mantle part, it holds the temperature of that end. At $P \le 0$ (a padded node) the solve takes the surface temperature, or the linear first guess below blend 1.
+- A table that is not split behaves as the mantle part at both ends.
+- Every lookup returns a temperature from 100 K to $10^5$ K, the maximum of the PALEOS tables.
 
 ### Which table the strict test accepts
 
@@ -138,19 +140,7 @@ In the top cell, a cut also needs the shell of the density table to change mixtu
 With the nodes cut and the shell not cut, the shell misses the inner node of the cell by up to 3436 K (`PALEOS:H2O`, unpadded top).
 This value is a one-off measurement on the stored profiles of `tests/test_adiabat_real_profiles.py`; that test itself asserts only a miss above 1 K.
 
-The table gives the largest change of a node temperature when the routine also cuts that boundary, and in brackets that change as a fraction of the node temperature. The profiles are the stored 2-layer structures of `tests/test_adiabat_real_profiles.py` (150 nodes; `default_k0` with the surface anchor, `ic_dummy` with the CMB anchor), with an H2O layer put above the boundary for the temperature integration only, not solved 3-layer planets. The cut values come from the same midpoint rule, not from an independent integration, and with `PALEOS:H2O` the deeper boundaries give centre temperatures of 15900 to 19300 K, far above a real planet.
-
-| H2O layer from the middle of | Anchor | `PALEOS:H2O` | `Seager2007:H2O` |
-|---|---|---|---|
-| the top cell, top at $1.2 \times 10^5$ Pa | surface | 8263 K (1.34) | 513 K (0.083) |
-| the top cell | CMB | 235 K (0.19) | 11.0 K (0.0025) |
-| the top cell, padded top | CMB | 0 K | 0 K |
-| the 2nd node segment from the top, 1.2 to 2.4 GPa | surface | 594 K (0.037) | 62 K (0.011) |
-| the 5th, 4.9 to 6.2 GPa | surface | 157 K (0.0088) | 48 K (0.0093) |
-| the 20th, 29.1 to 30.9 GPa | surface | 19 K ($9.9 \times 10^{-4}$) | 20 K ($4.6 \times 10^{-3}$) |
-| the 40th, 67.1 to 69.2 GPa | surface | 9.1 K ($4.7 \times 10^{-4}$) | 12 K ($3.1 \times 10^{-3}$) |
-
-These values come from a one-off measurement on the stored profiles; no test or tool of the repository writes them again.
+[Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) gives the size of this limit on the stored profiles.
 
 ## Ranges and checks of the inputs
 

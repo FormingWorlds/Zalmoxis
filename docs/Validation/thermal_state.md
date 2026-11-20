@@ -55,10 +55,23 @@ The largest difference from the reference on each profile, against the test boun
 
 The values depend on the platform at the level of round-off, so a plot of them cannot match on every platform; the test asserts the 1 K bound and prints the values.
 
-**Known limit.**
+**Known limits.**
 
 - **What the test covers.** The test integrates on 6 stored structures and runs no structure solve. Their structure solves used a forward Euler adiabat, so they differ a little from the structures that a solve with the midpoint adiabat returns. The Test details box names the source commit.
 - **The Euler line.** It differs from the reference by its first-order step error and by its isothermal top shell, and is a visual comparison only. Where the core meets the iron melting curve, the integration itself departs from a core at constant entropy ([known limits](../Explanations/adiabat_integration.md#known-limits-of-the-integration)).
+- **The uncut boundary of an ice layer** ([its mechanism](../Explanations/adiabat_integration.md#the-uncut-boundary-of-an-ice-layer)). The table gives the largest change of a node temperature when the routine also cuts that boundary, and in brackets that change as a fraction of the node temperature. The profiles are the stored 2-layer structures of `tests/test_adiabat_real_profiles.py` (150 nodes; `default_k0` with the surface anchor, `ic_dummy` with the CMB anchor), with an H2O layer put above the boundary for the temperature integration only, not solved 3-layer planets. The cut values come from the same midpoint rule, not from an independent integration, and with `PALEOS:H2O` the deeper boundaries give centre temperatures of 15900 to 19300 K, far above a real planet.
+
+    | H2O layer from the middle of | Anchor | `PALEOS:H2O` | `Seager2007:H2O` |
+    |---|---|---|---|
+    | the top cell, top at $1.2 \times 10^5$ Pa | surface | 8263 K (1.34) | 513 K (0.083) |
+    | the top cell | CMB | 235 K (0.19) | 11.0 K (0.0025) |
+    | the top cell, padded top | CMB | 0 K | 0 K |
+    | the 2nd node segment from the top, 1.2 to 2.4 GPa | surface | 594 K (0.037) | 62 K (0.011) |
+    | the 5th, 4.9 to 6.2 GPa | surface | 157 K (0.0088) | 48 K (0.0093) |
+    | the 20th, 29.1 to 30.9 GPa | surface | 19 K ($9.9 \times 10^{-4}$) | 20 K ($4.6 \times 10^{-3}$) |
+    | the 40th, 67.1 to 69.2 GPa | surface | 9.1 K ($4.7 \times 10^{-4}$) | 12 K ($3.1 \times 10^{-3}$) |
+
+    These values come from a one-off measurement on the stored profiles; no test or tool of the repository writes them again.
 
 ??? info "Test details"
     - Reference: `scipy.integrate.solve_ivp` (DOP853), relative tolerance $10^{-13}$, absolute $10^{-15}$, checked against RK45 at the same tolerances to 0.01 K.
