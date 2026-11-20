@@ -1124,7 +1124,8 @@ def test_the_cmb_point_with_a_stepped_core_table_takes_the_table():
 
 def test_the_cmb_point_rule_takes_the_core_side_of_the_t_source():
     """The rule of the solver for the CMB point: a core table first, else on the full adiabat
-    (a T function with ``full`` set) the core gradient stepped from the last core node, else the
+    (a T function with ``full`` set) the core gradient stepped from the last core node, else in a
+    solve that computes its own adiabat (``ramp_asked``) none, else the
     T function at the CMB radius (r^3 linear in m, also with NaN nodes past the core mass) and
     P_cmb; None without a T source."""
     from zalmoxis.eos.temperature import cmb_point_temperature
@@ -1147,7 +1148,8 @@ def test_the_cmb_point_rule_takes_the_core_side_of_the_t_source():
     table = (p[[20, 0]], np.array([4000.0, 5000.0]))
     with_table = _cmb_point_rule(table, adiabat, r, m, cmb, nabla)  # the table first
     assert with_table(p_cmb, p[20], t[20]) == float(core_temperature(p_cmb, table))
-    adiabat.full = False  # a pass of the blend ramp: the T function itself
+    adiabat.full = False  # a pass of the blend ramp: the interpolation in a solve of its own
+    assert _cmb_point_rule(None, adiabat, r, m, cmb, nabla, ramp_asked=True) is None
     assert _cmb_point_rule(None, adiabat, r, m, cmb, nabla)(p_cmb, p[20], t[20]) == 1.0
 
     def linear(r_, P):
