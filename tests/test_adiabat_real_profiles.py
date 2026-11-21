@@ -89,6 +89,7 @@ def _reference(kw, method='DOP853', p_ice=None, cut_ice=True):
             return [0.0]
         return [v]
 
+    p_ice = p_ice or (lambda lo, hi, b: np.interp(b, (lo[0], hi[0]), (lo[1], hi[1])))
     ice = kw['core_mantle_mass'] if cut_ice else None
     bounds = sorted(
         {b for b in (cmb, ice) if b and mixture(b * (1 - 1e-9)) is not mixture(b * (1 + 1e-9))}
@@ -100,12 +101,7 @@ def _reference(kw, method='DOP853', p_ice=None, cut_ice=True):
             cuts = [
                 (b, math.exp(np.interp(b, (m_lo, m_hi), np.log((p_lo, p_hi)))))
                 if b == cmb
-                else (
-                    b,
-                    p_ice((m_lo, p_lo), (m_hi, p_hi), b)
-                    if p_ice
-                    else np.interp(b, (m_lo, m_hi), (p_lo, p_hi)),
-                )
+                else (b, p_ice((m_lo, p_lo), (m_hi, p_hi), b))
                 for b in bounds
                 if m_lo < b < m_hi
             ]
