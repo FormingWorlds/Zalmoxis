@@ -1771,7 +1771,8 @@ class TestLayerTables:
         """The mantle table holds the mantle nodes only, the core part the core nodes sorted by
         P; a mantle query at a pressure of the core of the table's pass reads the mantle end
         adiabat, not a core temperature. With fewer than 2 nodes in a layer the core part is
-        None and the mantle part is the table of all nodes."""
+        None and the mantle part is the table of all nodes, with the point of an ice boundary
+        inside the top cell."""
         from zalmoxis.solver import _adiabat_table, _layer_tables, _table_lookup
 
         p = np.geomspace(3.6e11, 1e5, 20)
@@ -1789,9 +1790,11 @@ class TestLayerTables:
         assert _table_lookup(*mantle)(q) == pytest.approx(
             ts[-1] * (q / 10 ** lp[-1]) ** n, rel=1e-12
         )
-        whole = _adiabat_table(p, t, m, shell)
+        ice = 0.5 * (m[-2] + m[-1])
+        whole = _adiabat_table(p, t, m, shell, False, ice)
+        assert whole[0].size == _adiabat_table(p, t, m, shell)[0].size + 1
         for c in (0.5 * m[0], 0.5 * (m[-2] + m[-1])):
-            mantle, core = _layer_tables(p, t, m, c, shell)
+            mantle, core = _layer_tables(p, t, m, c, shell, boundary=ice)
             assert core is None
             for a, b in zip(mantle, whole):
                 np.testing.assert_array_equal(a, b)
