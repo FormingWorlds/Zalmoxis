@@ -204,27 +204,52 @@ def _padded(cmm):
     }
 
 
+_ICE, _CMB = {'ice_layer': None}, 'adiabatic_from_cmb'
+
+
 @pytest.mark.parametrize(
-    ('cmm', 'asked', 'mixes', 'warned'),
+    ('cmm', 'asked', 'mixes', 'mode', 'warned'),
     [
-        (5.95e24, True, {'ice_layer': None}, True),
-        (5.9e24, True, {'ice_layer': None}, False),
-        (5.0e24, True, {'ice_layer': None}, False),
-        (5.95e24, False, {'ice_layer': None}, False),
-        (5.95e24, True, {'mantle': None}, False),
+        (5.95e24, True, _ICE, 'adiabatic', 'every node below it'),
+        (5.95e24, True, _ICE, _CMB, 'only the padded node'),
+        (5.9e24, True, _ICE, 'adiabatic', None),
+        (5.0e24, True, _ICE, 'adiabatic', None),
+        (5.98e24, True, _ICE, 'adiabatic', None),
+        (5.95e24, False, _ICE, 'adiabatic', None),
+        (5.95e24, True, {'mantle': None}, 'adiabatic', None),
+        (None, True, _ICE, 'adiabatic', None),
+        ('no_p', True, _ICE, 'adiabatic', None),
     ],
-    ids=['in_cell', 'at_node', 'below_cell', 'no_adiabat', 'no_ice'],
+    ids=[
+        'in_cell',
+        'from_cmb',
+        'at_node',
+        'below_cell',
+        'above_stop',
+        'no_adiabat',
+        'no_ice',
+        'no_cmm',
+        'no_positive_p',
+    ],
 )
 def test_a_padded_cell_with_the_ice_boundary_warns(
-    monkeypatch, caplog, cmm, asked, mixes, warned
+    monkeypatch, caplog, cmm, asked, mixes, mode, warned
 ):
     """An accepted padded profile warns that its uncut top cell holds the ice boundary only on
-    an adiabat, with an ice layer, and with the boundary above the outermost node with P > 0."""
+    an adiabat, with an ice layer, with the boundary between the outermost node with P > 0 and
+    the stop mass, and with the text of its anchor; a missing input gives no warning."""
     from zalmoxis import solver as zs
 
-    cfg = {'planet_mass': earth_mass, 'target_surface_pressure': 1e5}
+    res = _padded(5.95e24 if cmm == 'no_p' else cmm)
+    if cmm is None:
+        del res['core_mantle_mass']
+    if cmm == 'no_p':
+        res['pressure'] = np.zeros(6)
+    cfg = {'planet_mass': earth_mass, 'target_surface_pressure': 1e5, 'temperature_mode': mode}
     monkeypatch.setattr(zs, 'check_accepted', lambda *a, **k: None)
     caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
-    zs._check_accepted(_padded(cmm), {}, cfg, {}, None, mixes, None, asked)
+    zs._check_accepted(res, {}, cfg, {}, None, mixes, None, asked)
     assert 'surface stop' in caplog.text
-    assert ('lies in the padded top cell' in caplog.text) is warned, caplog.text
+    hit = 'lies in the padded top cell' in caplog.text
+    assert hit is (warned is not None), caplog.text
+    assert warned is None or warned in caplog.text, caplog.text
