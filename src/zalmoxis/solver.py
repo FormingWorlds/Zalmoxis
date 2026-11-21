@@ -455,7 +455,11 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False, boundary=None):
     pad = pressure[-1] <= 0
     j = 0 if pad else 1  # the deeper node of the cell
     ms = mass[s][keep]
-    k = np.flatnonzero((ms[:-1] > boundary) & (ms[1:] < boundary)) if boundary else []
+    k = (
+        np.flatnonzero((ms[:-1] > boundary) & (ms[1:] < boundary))
+        if boundary is not None
+        else []
+    )
     if len(k) and k[0] >= j:  # the ice boundary inside a segment below the top cell
         k = int(k[0])
         p_b = np.interp(boundary, (ms[k + 1], ms[k]), (P[k + 1], P[k]))
