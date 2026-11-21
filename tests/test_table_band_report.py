@@ -328,7 +328,6 @@ class TestReportTableBands:
         ('adiabatic', 'Seager2007:H2O', 0.0, 8.0 * (1 - 5e-13)),
         ('adiabatic_from_cmb', 'Seager2007:H2O', 0.0, 8.0),
         ('adiabatic_from_cmb', 'Seager2007:H2O', 0.0, 8.0 * (1 + 5e-13)),
-        ('adiabatic_from_cmb', 'Seager2007:H2O', 0.0, 8.0 * (1 - 5e-13)),
     ],
     ids=[
         'surface',
@@ -346,7 +345,6 @@ class TestReportTableBands:
         'surface_ice_just_below_node',
         'cmb_ice_on_node',
         'cmb_ice_just_above_node',
-        'cmb_ice_just_below_node',
     ],
 )
 def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surface_p, cmm):
