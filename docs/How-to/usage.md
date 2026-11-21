@@ -78,7 +78,8 @@ In `planet_profile.txt` of this run:
 - The last 18 of the 150 nodes lie in the ice layer, which starts at the enclosed mass $0.9 M$.
 - The temperature follows the H$_2$O adiabat from 300 K at the surface to 509 K at the deepest ice node, near 11.5 GPa.
 - The adiabat continues through the mantle and the core to 929 K at the centre.
-- With `ice_layer = "Seager2007:H2O"`, an EOS without temperature dependence, every ice node stays at 300 K. On macOS arm64 this run ends in a surface stop (`padded`) and logs one warning; [Check the surface pressure of a result](#check-the-surface-pressure-of-a-result) explains what to check.
+- With `ice_layer = "Seager2007:H2O"`, an EOS without temperature dependence, every ice node stays at 300 K.
+- The `Seager2007:H2O` run ends in a surface stop on macOS arm64: `result['padded']` is True and the solver logs the surface-stop warning. On another platform the same run can end with or without a surface stop, so read `padded` in every run; [Check the surface pressure of a result](#check-the-surface-pressure-of-a-result) explains the check.
 
 [Layer boundaries inside a node segment](../Explanations/adiabat_integration.md#layer-boundaries-inside-a-node-segment) explains how the adiabat crosses the boundary between 2 nodes.
 

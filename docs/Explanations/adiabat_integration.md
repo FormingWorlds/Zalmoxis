@@ -107,7 +107,7 @@ When the CMB lies in the same segment, its cut also takes $P$ linear in $m$, so 
 A piece that ends on a node on the boundary takes the mixture of its middle, so an outward step into that node stays in the mantle.
 The T(P) table of the density solve gains the boundary as one more point, with the temperature of the adiabat there, so its lookup does not interpolate across the change of slope.
 
-A T-independent ice layer (`Seager2007:H2O`) holds the temperature of its anchor-side end: the surface temperature with the surface anchor, so the mantle starts at that temperature at the boundary.
+A layer whose EOS has no temperature dependence, such as `Seager2007:H2O`, has no adiabatic gradient, so the integration holds one temperature over it: the temperature at its end nearer the anchor: the surface temperature with the surface anchor, the mantle temperature at the boundary with the CMB anchor.
 
 **Where this is checked.** [The adiabat across the mantle and ice boundary](../Validation/thermal_state.md#the-adiabat-across-the-mantle-and-ice-boundary).
 
@@ -142,7 +142,7 @@ So the strict accept test (the result key `accepted_on` is `'strict'`) accepts a
 ## Known limits of the integration
 
 - **Water below 1 bar.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
-- **Layer boundary inside a padded top cell.** The adiabat does not cut a padded cell, and the shell takes one mixture over it ([How the density solve reads the temperature over the top cell](#how-the-density-solve-reads-the-temperature-over-the-top-cell)). It warns when the ice boundary lies there.
+- **Layer boundary inside a padded top cell.** The adiabat does not cut a padded cell, and the shell takes one mixture over it ([How the density solve reads the temperature over the top cell](#how-the-density-solve-reads-the-temperature-over-the-top-cell)). When an accepted profile in an adiabatic temperature mode has the mantle and ice boundary in that cell, the solver logs a warning ([the measured size](../Validation/thermal_state.md#the-adiabat-across-the-mantle-and-ice-boundary)).
 - **Core at the iron melting curve.** Where the core adiabat meets the melting curve of the PALEOS iron table, the integration follows the $\nabla_\mathrm{ad}$ column into the solid branch, while a core at constant entropy would stay on the melting curve. For 4 solves of `input/default.toml` at 2515 K the integrated centre is 724 to 732 K colder than the path at the constant table entropy of the core top, known to about the 84 to 106 K spacing of the table nodes.
 
 ## Ranges and checks of the inputs
@@ -154,10 +154,10 @@ This section lists what the routine and the config check refuse, and the check t
     - the surface temperature: a real number above 0 K and at most $10^5$ K;
     - with `anchor='cmb'`, the CMB temperature: from 100 K to $10^5$ K.
 
-    The config check `validate_config` refuses these values before a solve starts. In every temperature mode it refuses a surface temperature that is not a positive, finite number. In the modes `adiabatic` and `adiabatic_from_cmb` it also refuses a surface temperature above $10^5$ K, and in `adiabatic_from_cmb` a CMB temperature outside 100 K to $10^5$ K. `solver.main` does not call `validate_config`, and PROTEUS calls `solver.main` with its own configuration dict, so on that path the anchors are checked only when the solve computes the adiabat itself, at its first call of `compute_adiabatic_temperature`.
+    `validate_config` refuses the same values before a solve starts ([configuration](../How-to/configuration.md#assumptionsandinitialguesses)). `solver.main` does not call it, and PROTEUS calls `solver.main` with its own configuration dict, so on that path the anchors are checked at the first call of `compute_adiabatic_temperature`.
 
 - **Surface anchor below 100 K.** The routine accepts it, but the solver floors the temperature that the density reads from the adiabat at 100 K, so below 100 K the density uses 100 K.
-- **Check.** Each call raises `StructureInvariantError` when $T$ is not finite and positive at every node, rises outward from the anchor, or changes in a T-independent layer.
+- **Check.** Each call raises `StructureInvariantError` when $T$ is not finite and positive at every node, rises outward from the anchor, or changes over a layer whose EOS has no temperature dependence.
 - **Range of `max_dlnp`.** A real number from $10^{-4}$ to 1; any other value raises `ValueError`.
 
 **Where this is checked.** [Adiabat integration on smooth gradients](../Validation/thermal_state.md#adiabat-integration-on-smooth-gradients), [Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles), [Temperature across 1 bar](../Validation/thermal_state.md#temperature-across-1-bar) and [Temperature lookup over the top cell](../Validation/thermal_state.md#temperature-lookup-over-the-top-cell). Unit tests check the anchor ranges and the caps: `tests/test_adiabatic.py::TestMidpointAdiabat::test_anchor_temperature_property_over_its_domain`, `::test_a_huge_nabla_stops_at_the_node_caps`, `::test_a_segment_stops_exactly_at_its_limit_property` and `::test_an_unknown_anchor_raises_value_error` for the routine, and `tests/test_config_validation.py::TestTemperatureValidation::test_anchor_temperature_property_over_its_domain` for the config check.
