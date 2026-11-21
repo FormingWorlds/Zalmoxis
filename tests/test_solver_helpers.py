@@ -204,34 +204,27 @@ def _padded(cmm):
     }
 
 
-def test_an_ice_boundary_above_the_outer_positive_node_is_in_the_padded_cell():
-    """The boundary lies in the padded top cell exactly when it is above the outermost node
-    with P > 0 (5.9e24 kg here)."""
-    from zalmoxis.solver import _ice_boundary_in_padded_cell
-
-    assert _ice_boundary_in_padded_cell(_padded(5.95e24))
-    assert not _ice_boundary_in_padded_cell(_padded(5.9e24))
-    assert not _ice_boundary_in_padded_cell(_padded(5.0e24))
-
-
 @pytest.mark.parametrize(
-    ('cmm', 'asked', 'warned'),
-    [(5.95e24, True, True), (5.0e24, True, False), (5.95e24, False, False)],
-    ids=['in_cell', 'below_cell', 'no_adiabat'],
+    ('cmm', 'asked', 'mixes', 'warned'),
+    [
+        (5.95e24, True, {'ice_layer': None}, True),
+        (5.9e24, True, {'ice_layer': None}, False),
+        (5.0e24, True, {'ice_layer': None}, False),
+        (5.95e24, False, {'ice_layer': None}, False),
+        (5.95e24, True, {'mantle': None}, False),
+    ],
+    ids=['in_cell', 'at_node', 'below_cell', 'no_adiabat', 'no_ice'],
 )
-def test_a_padded_cell_with_the_ice_boundary_warns(monkeypatch, caplog, cmm, asked, warned):
+def test_a_padded_cell_with_the_ice_boundary_warns(
+    monkeypatch, caplog, cmm, asked, mixes, warned
+):
     """An accepted padded profile warns that its uncut top cell holds the ice boundary only on
-    an adiabat and with the boundary above the outermost node with P > 0."""
-    import os
-
-    from zalmoxis import get_zalmoxis_root
+    an adiabat, with an ice layer, and with the boundary above the outermost node with P > 0."""
     from zalmoxis import solver as zs
-    from zalmoxis.config import load_zalmoxis_config
 
-    cfg = load_zalmoxis_config(os.path.join(get_zalmoxis_root(), 'input', 'default.toml'))
-    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], ice_layer='Seager2007:H2O')
+    cfg = {'planet_mass': earth_mass, 'target_surface_pressure': 1e5}
     monkeypatch.setattr(zs, 'check_accepted', lambda *a, **k: None)
     caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
-    zs._check_accepted(_padded(cmm), {}, cfg, {}, None, None, None, adiabat_asked=asked)
+    zs._check_accepted(_padded(cmm), {}, cfg, {}, None, mixes, None, asked)
     assert 'surface stop' in caplog.text
     assert ('lies in the padded top cell' in caplog.text) is warned, caplog.text

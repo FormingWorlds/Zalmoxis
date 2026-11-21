@@ -455,11 +455,7 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False, boundary=None):
     pad = pressure[-1] <= 0
     j = 0 if pad else 1  # the deeper node of the cell
     ms = mass[s][keep]
-    k = (
-        np.flatnonzero((ms[:-1] > boundary) & (ms[1:] < boundary))
-        if boundary is not None
-        else []
-    )
+    k = [] if boundary is None else np.flatnonzero((ms[:-1] > boundary) & (ms[1:] < boundary))
     if len(k) and k[0] >= j:  # the ice boundary inside a segment below the top cell
         k = int(k[0])
         p_b = np.interp(boundary, (ms[k + 1], ms[k]), (P[k + 1], P[k]))
@@ -794,7 +790,9 @@ def _check_accepted(
             'of the target surface pressure %.4g Pa (padded).',
             config_params['target_surface_pressure'],
         )
-        if adiabat_asked and 'ice_layer' in mixes and _ice_boundary_in_padded_cell(result):
+        p, m = (np.asarray(result[k]) for k in ('pressure', 'mass_enclosed'))
+        # the ice boundary above the outermost node with P > 0 lies in the padded top cell
+        if adiabat_asked and 'ice_layer' in mixes and result['core_mantle_mass'] > m[p > 0][-1]:
             logger.warning(
                 'The mantle and ice boundary lies in the padded top cell, which the adiabat '
                 'does not cut, so the nodes below it miss the adiabat of the cut boundary '
@@ -802,14 +800,6 @@ def _check_accepted(
                 'integration).'
             )
     return result
-
-
-def _ice_boundary_in_padded_cell(result):
-    """True when the ice boundary mass ``core_mantle_mass`` [kg] of an accepted result lies
-    above its outermost node with P > 0, inside the padded top cell that the adiabat does not
-    cut."""
-    p, m = (np.asarray(result[k], dtype=float) for k in ('pressure', 'mass_enclosed'))
-    return bool(result['core_mantle_mass'] > m[p > 0][-1])
 
 
 def _report_table_bands(

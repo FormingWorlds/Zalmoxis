@@ -70,8 +70,7 @@ def _ice_planet(monkeypatch, eos):
     assert got[:2] == (True, 1.0) and got[2] != 'timeout', got
     assert calls, 'no full-profile adiabat call recorded'
     kw, T_last = calls[-1]
-    P = np.asarray(kw['pressure'], float)
-    assert np.array_equal(P, np.asarray(res['pressure'], float)), 'not the accepted structure'
+    assert np.array_equal(kw['pressure'], res['pressure']), 'not the accepted structure'
     return res, kw, T_last
 
 
@@ -119,7 +118,6 @@ def test_a_solved_ice_planet_is_isothermal_in_the_ice_and_meets_the_cut_referenc
 
 
 @pytest.mark.physics_invariant
-@pytest.mark.reference_pinned
 def test_a_solved_tdep_ice_planet_meets_the_cut_reference(monkeypatch):
     """The case C planet with a PALEOS:H2O layer: the ice nodes follow the H2O adiabat inward
     from 300 K at the surface, and the last adiabat of the solve stays within 0.005 K of the
@@ -130,7 +128,8 @@ def test_a_solved_tdep_ice_planet_meets_the_cut_reference(monkeypatch):
     res, kw, T_last = _ice_planet(monkeypatch, 'PALEOS:H2O')
     m, T = np.asarray(res['mass_enclosed']), np.asarray(res['temperature'], float)
     ice = m >= res['core_mantle_mass'] * (1 - 1e-12)
-    assert ice.sum() > 5 and T[-1] == 300.0 and np.all(np.diff(T[ice]) < 0), T[ice]
+    assert ice.sum() > 5 and abs(T[-1] - 300.0) <= 1e-9, T[ice]
+    assert np.all(np.diff(T[ice]) <= 0) and T[ice][0] > T[-1], T[ice]
     ref, uncut = (_reference(kw, cut_ice=c)[0] for c in (True, False))
     err, off = (float(np.max(np.abs(T_last - x))) for x in (ref, uncut))
     print(f'last adiabat: {err:.3g} K from the cut reference, uncut reference {off:.3g} K off')

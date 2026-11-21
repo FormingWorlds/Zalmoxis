@@ -1815,9 +1815,8 @@ class TestLayerTables:
         plain_mantle, plain_core = _layer_tables(p, t, m, cmb, shell)
         out = ~is_core(m, cmb)
         assert mantle[0].size == plain_mantle[0].size + 1
-        for a, b in zip(mantle, _adiabat_table(p[out], t[out], m[out], shell, False, ice)):
-            np.testing.assert_array_equal(a, b)
-        for a, b in zip(core, plain_core):
+        direct = _adiabat_table(p[out], t[out], m[out], shell, False, ice)
+        for a, b in zip((*mantle, *core), (*direct, *plain_core)):
             np.testing.assert_array_equal(a, b)
 
 
