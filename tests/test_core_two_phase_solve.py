@@ -351,12 +351,12 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
 ):
     """Once the adiabat has its liquid branch, every ICB update takes the liquidus root with
     m^(2/3) linear in P (m23), the mass that the superheat test and the core arrays take at that
-    pressure; the passes before it take the root linear in m (10 passes of the 2480 K Fe-S core:
-    the ramp reaches blend 1 when it starts after any of the first 6 passes). The blend of the
-    updates (from the solver's debug line of each pass) does not decrease and takes each step of
-    the ramp; the updates below blend 1 give the readers no CMB-point rule, those at blend 1 a
-    rule. On the last update the rule (``_cmb_point_rule``) meets the liquid branch of the
-    solver recomputed with a node at the core mass to 1e-6 K."""
+    pressure; the passes before it take the root linear in m (8 passes of the 2480 K Fe-S core,
+    with a ramp trigger of 1 so the ramp starts after the first pass on every CPU). The blend of
+    the updates (from the solver's debug line of each pass) does not decrease and takes each
+    step of the ramp; the updates below blend 1 give the readers no CMB-point rule, those at
+    blend 1 a rule. On the last update the rule (``_cmb_point_rule``) meets the liquid branch of
+    the solver recomputed with a node at the core mass to 1e-6 K."""
     import inspect
 
     from zalmoxis import solver as zs
@@ -379,13 +379,13 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
     monkeypatch.setattr(zs.logger, 'debug', debug)
     monkeypatch.setattr(zs, 'icb_from_profile', spy)
     monkeypatch.setattr(zs, 'compute_adiabatic_temperature', adiabat)
-    _fes_cap(setup, caplog)
+    monkeypatch.setattr(zs, '_ADIABAT_RAMP_TRIGGER', 1.0)
+    _fes_cap(setup, caplog, max_iterations_outer=8)
     calls = [c for c in spy.call_args_list if 'm23' in c.kwargs]  # the ICB updates
     m23 = [c.kwargs['m23'] for c in calls]
     assert m23[-1] is True and m23 == sorted(m23), m23
     rules = [c.kwargs['cmb_point_rule'] for c in calls]
-    assert blends == sorted(blends) and blends[-1] == 1.0, blends
-    assert {b for b in blends if b > 0.0} == {0.25, 0.5, 0.75, 1.0}, blends  # steps of 0.25
+    assert blends == sorted(blends) and set(blends) - {0.0} == {0.25, 0.5, 0.75, 1.0}, blends
     assert [r is None for r in rules] == [b < 1.0 for b in blends], (blends, rules)
     final = [c.kwargs for c in spy.call_args_list if 'm23' not in c.kwargs]  # the core result
     assert final and final[-1]['cmb_point_rule'] is not None
@@ -409,12 +409,13 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
     assert abs(rules[-1](pc, p[n - 1], t[n - 1]) - exact) <= 1e-6, exact
 
 
-def test_a_cap_accept_on_the_blend_ramp_is_refused(setup, monkeypatch, caplog):
-    """6 outer passes of the 2480 K Fe-S core end on the cap accept of a pass of the blend ramp
-    (0 < blend < 1, for a ramp that starts after the 3rd, 4th or 5th pass). No ICB reader of
-    these passes gets a CMB-point rule, and the full-adiabat rule refuses the accept. With that
-    refusal off (accept keys kept), the check of the accepted pass raises
-    StructureInvariantError."""
+@pytest.mark.parametrize('passes', [2, 3, 4])
+def test_a_cap_accept_on_the_blend_ramp_is_refused(setup, monkeypatch, caplog, passes):
+    """2 to 4 outer passes of the 2480 K Fe-S core, with a ramp trigger of 1 so the ramp starts
+    after the first pass on every CPU, end on the cap accept of a pass of the blend ramp at
+    blend 0.25, 0.5 or 0.75. No ICB reader of these passes gets a CMB-point rule, and the
+    full-adiabat rule refuses the accept. With that refusal off (accept keys kept), the check of
+    the accepted pass raises StructureInvariantError."""
     from zalmoxis import solver as zs
     from zalmoxis.invariants import StructureInvariantError
 
@@ -425,16 +426,18 @@ def test_a_cap_accept_on_the_blend_ramp_is_refused(setup, monkeypatch, caplog):
         return rules[-1]
 
     monkeypatch.setattr(zs, '_cmb_point_rule', rule_spy)
+    monkeypatch.setattr(zs, '_ADIABAT_RAMP_TRIGGER', 1.0)
+    blend = 0.25 * (passes - 1)
     try:
-        res = _fes_cap(setup, caplog, max_iterations_outer=6)
+        res = _fes_cap(setup, caplog, max_iterations_outer=passes)
     except StructureInvariantError as err:
         pytest.fail(f'a pass of the blend ramp was accepted: {err}')
     assert rules and all(r is None for r in rules)  # every reader site of every pass
-    assert 0.0 < res['adiabat_blend'] < 1.0 and res['converged'] is False, res['adiabat_blend']
-    assert f'No accept of a pass at adiabat blend {res["adiabat_blend"]:.2f}' in caplog.text
+    assert res['adiabat_blend'] == blend and res['converged'] is False, res['adiabat_blend']
+    assert f'No accept of a pass at adiabat blend {blend:.2f}' in caplog.text
     monkeypatch.setattr(zs, '_REFUSED', dict(zs._REFUSED, converged=True))
     with pytest.raises(StructureInvariantError, match='not on the full adiabat'):
-        _fes_cap(setup, caplog, max_iterations_outer=6)
+        _fes_cap(setup, caplog, max_iterations_outer=passes)
 
 
 def test_a_caller_temperature_function_gives_the_cmb_point_its_value(
@@ -748,8 +751,7 @@ def test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb(setup, monkeypa
     assert 0.0 < m_ic < cmb and res['accepted_on'] == 'strict'
     assert res['adiabat_blend'] == res['adiabat_table_blend'] == 1.0
     tol = solver._default_solver_params(setup[1]['planet_mass'])['tolerance_outer']
-    lim = res['accept_mass_limit']
-    assert res['mass_error_at_accept'] <= lim <= tol, lim
+    assert res['mass_error_at_accept'] <= res['accept_mass_limit'] <= tol
     assert abs(res['icb_superheat']) <= solver._ICB_SUPERHEAT_TOL and res['icb_converged']
     used = _pass_adiabat_icbs(spy, res)
     assert used and used[-1] == res['icb_adiabat']
