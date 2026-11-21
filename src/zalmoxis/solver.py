@@ -460,7 +460,7 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False, boundary=None):
         k = int(k[0])
         p_b = np.interp(boundary, (ms[k + 1], ms[k]), (P[k + 1], P[k]))
         t_b = top_shell(np.array([P[k], p_b]), Ts[k], np.array([ms[k], boundary]))[-1]
-        P, Ts, ms = (np.insert(a, k + 1, v) for a, v in ((P, p_b), (Ts, t_b), (ms, boundary)))
+        P, Ts = (np.insert(a, k + 1, v) for a, v in ((P, p_b), (Ts, t_b)))
     if P.size <= j:
         return np.log10(P), Ts
     lo = ADIABAT_P_FLOOR if pad else max(P[0], ADIABAT_P_FLOOR)
@@ -469,7 +469,7 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False, boundary=None):
         k = int(np.log10(P[0]) < np.log10(lo))  # a top node below the floor stays
         # min: a guard if P is not in node order
         node = min(s[keep][j] + int(outward), mass.size - 1)
-        if not pad and boundary is not None and ms[j] < boundary < ms[0]:
+        if not pad and boundary is not None:
             p_b = np.interp(boundary, (ms[j], ms[0]), (P[j], P[0]))
             q = np.union1d(q, p_b) if lo < p_b < P[j] else q
         m_q = mass[node] if pad else np.interp(q, (P[0], P[j]), (ms[0], ms[j]))
@@ -482,8 +482,7 @@ def _shell_adiabat(adiabat, q, T_top, m):
     """T [K] at the shell pressures ``q`` [Pa], ascending from the top: ``adiabat(radii,
     pressure, mass, top=T_top)`` inward from ``T_top`` at ``q[0]``, with the shell points at the
     enclosed masses ``m`` [kg] (one value for all points, or one per point)."""
-    m = np.broadcast_to(np.asarray(m, dtype=float), q.shape)
-    return adiabat(np.arange(q.size), q[::-1], m[::-1].copy(), top=T_top)[::-1]
+    return adiabat(np.arange(q.size), q[::-1], np.full(q.size, m)[::-1], top=T_top)[::-1]
 
 
 def _inner_density_diff(density, old_density, pressure):

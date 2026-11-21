@@ -88,7 +88,7 @@ def cmb_point_temperature(nabla_of):
     )
 
 
-def _check_profile(T, first, mixtures=()):
+def _check_profile(T, first, mixtures):
     """Raise StructureInvariantError unless ``T`` is finite and positive at every node, does
     not rise outward from node ``first`` (the anchor side of the integrated nodes), and holds
     one T over the integrated nodes of each layer without a T-dependent component
@@ -100,7 +100,7 @@ def _check_profile(T, first, mixtures=()):
     if np.any(np.diff(T[first:]) > 0):
         raise StructureInvariantError('adiabat temperature is not non-increasing outward.')
     held = {}
-    for t, mx in zip(T[first:], list(mixtures)[first:]):
+    for t, mx in zip(T[first:], mixtures):
         if not mx.has_tdep() and held.setdefault(id(mx), t) != t:
             raise StructureInvariantError(
                 'adiabat temperature changes in a T-independent layer.'
@@ -306,7 +306,7 @@ def compute_adiabatic_temperature(
             if mixture.has_tdep():
                 t = _segment_temperature(t, p_a, p_b, nabla_of(mixture), h, anchor != 'cmb')
         T[i] = t
-    _check_profile(T, first, [mixture_at(m) for m in mass_enclosed])
+    _check_profile(T, first, [mixture_at(m) for m in mass_enclosed[first:]])
     return T
 
 
