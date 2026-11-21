@@ -140,7 +140,7 @@ Measured once and not asserted: with a padded top, against a table with 4096 she
 
 **Why this check exists.** A fault where the integration crosses the boundary between the mantle and an ice layer gives wrong temperatures below it. A test fails for each of 3 faults (the cases and the table test are defined under "What it tests"):
 
-- **No cut of the node segment that holds the boundary** (case A fails). The segment takes one mixture over its whole length, and every node beyond it misses the adiabat: on the stored profiles below the top cell by 9.1 to 595 K for `PALEOS:H2O` and 11.5 to 62 K for `Seager2007:H2O`, in the top cell by 8270 K and 514 K.
+- **No cut of the node segment that holds the boundary** (case A fails). The segment takes one mixture over its whole length, and every node beyond it misses the adiabat. On the stored profiles of case B the miss below the top cell is 9.1 to 595 K for `PALEOS:H2O` and 11.5 to 62 K for `Seager2007:H2O`. In the top cell it is 8270 K and 514 K with the surface anchor, and 235 K and 11 K with the CMB anchor.
 - **A cut at the wrong pressure** (case B2 fails with the cut at $\ln P$ linear in $m$). The 2 layers trade a part of the segment.
 - **A temperature table that holds only the nodes** (the table test fails without the boundary point). Its lookup inside the segment runs straight over the change of slope, 2.4 to 79 K off the adiabat.
 
@@ -150,7 +150,7 @@ Measured once and not asserted: with a padded top, against a table with 4096 she
 - **Case B, stored profiles.** An H2O layer is put on 2 stored 2-layer structures for the temperature only, from the middle of a node segment outward: the top cell of default start 0 with its top at $1.2 \times 10^5$ Pa (surface anchor), the top cell of the PROTEUS `dummy` profile (CMB anchor), and the 2nd, 5th, 20th and 40th segment of default start 0, each with `PALEOS:H2O` and `Seager2007:H2O`. These are not solved 3-layer planets, and the 2515 K surface of default start 0 puts `PALEOS:H2O` in its fluid range.
 - **Case B2, boundary pressure.** The same 12 cases against a reference whose boundary pressure comes from hydrostatic equilibrium.
 - **The table inside the boundary segment.** The temperature table of the density solve, built as the solve does, read at 400 pressures inside the segment that holds the boundary, for the 2nd to the 40th segment.
-- **Case C, solved planets.** 1 $M_\oplus$ with a core of 0.325 and an ice layer of 0.1 of the planet mass, PALEOS iron and MgSiO$_3$, a 300 K surface, accepted on the full adiabat: `Seager2007:H2O` at 150 nodes. The test records the inputs of the last adiabat of the solve, on the pressures of the accepted structure, and runs the DOP853 reference of case B on them, with and without the cut.
+- **Case C, a solved planet.** 1 $M_\oplus$ with a core of 0.325 and a `Seager2007:H2O` ice layer of 0.1 of the planet mass, PALEOS iron and MgSiO$_3$, a 300 K surface and 150 nodes, accepted on the full adiabat. The test records the inputs of the last adiabat of the solve, on the pressures of the accepted structure, and runs the DOP853 reference of case B on them, with and without the cut. A second test solves the same planet with a `PALEOS:H2O` layer, whose ice follows the H$_2$O adiabat inward from 300 K.
 
 **How we know the right answer.**
 
@@ -166,6 +166,11 @@ Measured once and not asserted: with a padded top, against a table with 4096 she
 ![Temperature difference from the cut DOP853 reference against pressure for an H2O layer from the 5th node segment of default start 0, with and without the cut](../assets/validation/adiabat_ice_boundary_dark.svg#only-dark){ width="80%" }
 
 **How to read the plot.** The x-axis is the pressure in GPa at the nodes of default start 0. A `PALEOS:H2O` layer starts in the middle of the 5th node segment from the top, at the vertical line. The y-axis is the distance in K from the DOP853 reference with the cut, on a logarithmic scale; a node that meets the reference to round-off is drawn at $10^{-3}$ K. The solid line is the integration of Zalmoxis, which the test bounds by 1 K at every node. The dashed line is the reference without the cut, one mixture per segment: it meets the solid line above the boundary and lies 48 to 157 K off below it. The test passes when the solid line stays below 1 K.
+
+![Temperature difference from the cut DOP853 reference against pressure on the last adiabat of the solved case C planet, with and without the cut](../assets/validation/adiabat_ice_planet.svg#only-light){ width="80%" }
+![Temperature difference from the cut DOP853 reference against pressure on the last adiabat of the solved case C planet, with and without the cut](../assets/validation/adiabat_ice_planet_dark.svg#only-dark){ width="80%" }
+
+**How to read the plot.** The x-axis is the pressure in GPa at the 150 nodes of the solved case C planet, and the vertical line is the mantle and ice boundary. The y-axis is the distance in K from the DOP853 reference with the cut, on a logarithmic scale; a node that meets the reference to round-off is drawn at $10^{-6}$ K, so in the ice both lines lie there. The solid line is the last adiabat of the solve, which the test bounds by 0.005 K. The dashed line is the reference without the cut: below the boundary it lies up to 0.72 K off. The test passes when the solid line stays below 0.005 K.
 
 Measured values, macOS arm64:
 
@@ -184,6 +189,7 @@ Measured values, macOS arm64:
 | dropped node, top 4 segments | $P$ linear in $m$, relative | at most $9.4 \times 10^{-3}$ | 0.01 |
 | C, `Seager2007:H2O` | ice nodes from 300 K | to round-off | $10^{-9}$ K |
 | C, `Seager2007:H2O`, last adiabat of the solve | from the reference with the cut, without it | $1.6 \times 10^{-4}$ K, 0.72 K | 0.005 K, above 0.005 K |
+| C, `PALEOS:H2O`, last adiabat of the solve | the same | $3.5 \times 10^{-4}$ K, 6.5 K | 0.005 K, above 0.005 K |
 
 ??? info "Measured solves (not asserted by a test)"
     - Setup: the planet of case C with a `PALEOS:H2O` and with a `Seager2007:H2O` layer, at 150, 300 and 600 nodes and mass tolerances (`tolerance_outer`) of $10^{-3}$, the default, and $10^{-4}$: 6 pairs of solves with and without the cut for each EOS. The next 3 bullets give the `PALEOS:H2O` solves.
@@ -193,21 +199,18 @@ Measured values, macOS arm64:
     - `Seager2007:H2O`: the cut moves the centre temperature by $-0.9$ to $+0.02$ K.
     - Radius: the cut moves it by $-4.3 \times 10^{-4}$ to $+3.1 \times 10^{-4}$ with either EOS, with no common sign; it spreads by $7.3 \times 10^{-4}$ to $1.05 \times 10^{-3}$ over these meshes and tolerances, with or without the cut.
 
-![Temperature difference from the cut DOP853 reference against pressure on the last adiabat of the solved case C planet, with and without the cut](../assets/validation/adiabat_ice_planet.svg#only-light){ width="80%" }
-![Temperature difference from the cut DOP853 reference against pressure on the last adiabat of the solved case C planet, with and without the cut](../assets/validation/adiabat_ice_planet_dark.svg#only-dark){ width="80%" }
-
-**How to read the plot.** The x-axis is the pressure in GPa at the 150 nodes of the solved case C planet, and the vertical line is the mantle and ice boundary. The y-axis is the distance in K from the DOP853 reference with the cut, on a logarithmic scale; a node that meets the reference to round-off is drawn at $10^{-6}$ K, so in the ice both lines lie there. The solid line is the last adiabat of the solve, which the test bounds by 0.005 K. The dashed line is the reference without the cut: below the boundary it lies up to 0.72 K off. The test passes when the solid line stays below 0.005 K.
-
 **Known limits.**
 
-- **Padded top cell.** The integration does not cut a padded top cell, so an ice boundary inside it is not resolved ([known limits](../Explanations/adiabat_integration.md#known-limits-of-the-integration)).
+- **Padded top cell.** The integration does not cut a padded top cell, so an ice boundary inside it is not resolved ([known limits](../Explanations/adiabat_integration.md#known-limits-of-the-integration)), and the accepted profile logs a warning. For a `Seager2007:H2O` layer of 0.003 of the planet mass at 150 nodes (1 ice node, in a top cell of 0.006 of the mass), the centre lies 2.1 K above a DOP853 reference that cuts the cell, with the padded node set to $10^5$ Pa.
+- **CMB and ice boundary in one segment.** With no node in the mantle, the CMB point also takes $P$ linear in $m$. This needs a mantle thinner than one segment, about 0.01 of the planet mass at 150 nodes; for a `PALEOS:H2O` layer and a mantle of 0.0005 the centre temperature moves by 0.011 K against $\ln P$ linear in $m$ at the CMB.
+- **`adiabatic_from_cmb` with an ice layer.** No test solves it. The case C planet with a `PALEOS:H2O` layer and the CMB at 737 K, the CMB temperature of its solve with the surface anchor, accepts on the strict test in 15 passes (14 without the cut), its ice at 301 to 511 K. A CMB at 4000 K heats the layer to 2600 K, far above the critical point of H$_2$O, and that solve ends on the iteration limit, with and without the cut.
 - **The fluid range of `PALEOS:H2O`.** Cases B and B2 put `PALEOS:H2O` at the 2515 K surface of a stored structure, far above the H2O critical point; the steep adiabat there sets the largest values of the table. A solved planet with an H2O ice layer must have a surface below 647 K (`validate_config`).
 - **Solve noise.** The centre temperature of a solved `PALEOS:H2O` planet spreads by 4.40 K without the cut and 2.16 K with it over these 6 runs, so no test bounds its change with the mesh; the result above is a measurement, not a pass mark.
 
 ??? info "Test details"
     - References: the closed form of case A; the DOP853 reference of [Adiabat integration on real profiles](#adiabat-integration-on-real-profiles) with the ice cut at $P$ linear in $m$ (case B) or at the hydrostatic pressure (case B2); a DOP853 march over the boundary segment (relative tolerance $10^{-12}$, absolute $10^{-14}$ on $\ln T$) for the table.
     - Tolerances: see the table above.
-    - Test ids: `tests/test_ice_boundary_cut.py` (unit tier: `::test_the_adiabat_follows_each_layer_across_the_ice_boundary`, `::test_the_cut_meets_the_closed_form_anywhere_in_a_segment`, `::test_a_two_layer_profile_ignores_core_mantle_mass`, `::test_a_thin_mantle_inside_one_segment_keeps_the_profile_monotone`, `::test_a_t_independent_layer_must_hold_one_temperature`); `tests/test_adiabat_real_profiles.py::test_the_adiabat_meets_the_reference_across_an_ice_boundary`, `::test_the_ice_boundary_pressure_meets_hydrostatic_equilibrium`, `::test_the_lookup_follows_the_cut_inside_the_boundary_segment`, `::test_pressure_is_near_linear_in_mass_over_a_top_segment`; `tests/test_ice_layer_solves.py::test_a_solved_ice_planet_is_isothermal_in_the_ice_and_meets_the_cut_reference` (nightly job `paleos_adiabat`).
+    - Test ids: `tests/test_ice_boundary_cut.py` (unit tier: `::test_the_adiabat_follows_each_layer_across_the_ice_boundary`, `::test_the_cut_meets_the_closed_form_anywhere_in_a_segment`, `::test_a_two_layer_profile_ignores_core_mantle_mass`, `::test_a_thin_mantle_inside_one_segment_keeps_the_profile_monotone`, `::test_a_t_independent_layer_must_hold_one_temperature`); `tests/test_adiabat_real_profiles.py::test_the_adiabat_meets_the_reference_across_an_ice_boundary`, `::test_the_ice_boundary_pressure_meets_hydrostatic_equilibrium`, `::test_the_lookup_follows_the_cut_inside_the_boundary_segment`, `::test_pressure_is_near_linear_in_mass_over_a_top_segment`; `tests/test_ice_layer_solves.py::test_a_solved_ice_planet_is_isothermal_in_the_ice_and_meets_the_cut_reference`, `::test_a_solved_tdep_ice_planet_meets_the_cut_reference` (nightly job `paleos_adiabat`).
     - Invariant in the code: `compute_adiabatic_temperature` calls `_check_profile` on every profile, which raises `StructureInvariantError` when a layer without a T-dependent component does not hold one temperature over its integrated nodes.
     - Command: `pytest -o "addopts=" tests/test_ice_boundary_cut.py tests/test_adiabat_real_profiles.py -k "ice or boundary or top_segment"`; add `--validation-plots` to write the plot; `pytest -o "addopts=" tests/test_ice_layer_solves.py` for case C.
 
