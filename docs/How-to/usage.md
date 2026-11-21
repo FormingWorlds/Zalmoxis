@@ -50,7 +50,11 @@ For the full list of parameters (EOS selection, temperature modes, solver settin
 
 ## A planet with an ice layer
 
-A third layer of water ice above the mantle needs 3 changes in a copy of `input/default.toml`: a mantle mass fraction above 0, an EOS for the ice layer, and a surface temperature below 647 K, the critical point of H$_2$O (the configuration check refuses a hotter surface with an H$_2$O layer in every temperature mode but `isothermal`).
+A third layer of water ice above the mantle needs 3 changes in a copy of `input/default.toml`:
+
+- a mantle mass fraction above 0; the ice layer takes the rest of the mass;
+- an EOS for the ice layer;
+- a surface temperature below 647 K, the critical point of H$_2$O. The configuration check refuses a hotter surface with an H$_2$O layer in every temperature mode but `isothermal`.
 
 ```toml
 [AssumptionsAndInitialGuesses]
@@ -69,7 +73,14 @@ Run it as before:
 python -m zalmoxis -c my_ice.toml
 ```
 
-The last 18 of the 150 nodes in `planet_profile.txt` lie in the ice layer, which starts at the enclosed mass $0.9 M$. The temperature column follows the H$_2$O adiabat from 300 K at the surface to 509 K at the deepest ice node near 11.5 GPa, and the adiabat continues through the mantle and the core to 929 K at the centre. With `ice_layer = "Seager2007:H2O"`, an EOS without temperature dependence, every ice node stays at 300 K. [Layer boundaries inside a node segment](../Explanations/adiabat_integration.md#layer-boundaries-inside-a-node-segment) explains how the adiabat crosses the boundary between 2 nodes.
+In `planet_profile.txt` of this run:
+
+- The last 18 of the 150 nodes lie in the ice layer, which starts at the enclosed mass $0.9 M$.
+- The temperature follows the H$_2$O adiabat from 300 K at the surface to 509 K at the deepest ice node, near 11.5 GPa.
+- The adiabat continues through the mantle and the core to 929 K at the centre.
+- With `ice_layer = "Seager2007:H2O"`, an EOS without temperature dependence, every ice node stays at 300 K.
+
+[Layer boundaries inside a node segment](../Explanations/adiabat_integration.md#layer-boundaries-inside-a-node-segment) explains how the adiabat crosses the boundary between 2 nodes.
 
 ## Output files
 

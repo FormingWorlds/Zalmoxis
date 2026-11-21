@@ -96,6 +96,7 @@ Without the cut, the segment would take one of the 2 values, and the first inner
 ### The ice boundary
 
 Why do the CMB and the ice boundary take different rules?
+$P$ linear in $m$ gives equal pressure steps for equal mass steps, $\ln P$ linear in $m$ equal pressure factors.
 In short: a top cell spans up to 4 decades in $P$, and there $\ln P$ linear in $m$ puts the boundary pressure far too low; a segment at the CMB spans about 0.03 in $\ln P$, where the 2 rules agree.
 
 In hydrostatic equilibrium $\mathrm{d}P/\mathrm{d}m = -G m / (4 \pi r^4)$, and over one segment $m$ and $r$ change little, so $P$ is close to linear in $m$.

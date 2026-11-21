@@ -138,9 +138,11 @@ Measured once and not asserted: with a padded top, against a table with 4096 she
 
 ## The adiabat across the mantle and ice boundary
 
-**Why this check exists.** If the integration did not cut the node segment that holds the boundary between the mantle and an ice layer, the segment would take one mixture over its whole length, and every node beyond it would miss the adiabat. On the stored profiles below the top cell that miss is 9.1 to 595 K for `PALEOS:H2O` and 11.5 to 62 K for `Seager2007:H2O`, and in the top cell 8270 K and 514 K. If the cut sat at the wrong pressure, the 2 layers would trade a part of the segment. If the temperature table of the density solve held only the nodes, its lookup inside the segment would run straight over the change of slope, 2.4 to 79 K off the adiabat.
+**Why this check exists.** A fault where the integration crosses the boundary between the mantle and an ice layer gives wrong temperatures below it. A test fails for each of 3 faults:
 
-The tests fail for each fault: case A without the cut, case B2 with the cut at $\ln P$ linear in $m$, and the table test without the boundary point.
+- **No cut of the node segment that holds the boundary** (case A fails). The segment takes one mixture over its whole length, and every node beyond it misses the adiabat: on the stored profiles below the top cell by 9.1 to 595 K for `PALEOS:H2O` and 11.5 to 62 K for `Seager2007:H2O`, in the top cell by 8270 K and 514 K.
+- **A cut at the wrong pressure** (case B2 fails with the cut at $\ln P$ linear in $m$). The 2 layers trade a part of the segment.
+- **A temperature table that holds only the nodes** (the table test fails without the boundary point). Its lookup inside the segment runs straight over the change of slope, 2.4 to 79 K off the adiabat.
 
 **What it tests.**
 
@@ -148,7 +150,7 @@ The tests fail for each fault: case A without the cut, case B2 with the cut at $
 - **Case B, stored profiles.** An H2O layer is put on 2 stored 2-layer structures for the temperature only, from the middle of a node segment outward: the top cell of default start 0 with its top at $1.2 \times 10^5$ Pa (surface anchor), the top cell of the PROTEUS `dummy` profile (CMB anchor), and the 2nd, 5th, 20th and 40th segment of default start 0, each with `PALEOS:H2O` and `Seager2007:H2O`. These are not solved 3-layer planets, and the 2515 K surface of default start 0 puts `PALEOS:H2O` in its fluid range.
 - **Case B2, boundary pressure.** The same 12 cases against a reference whose boundary pressure comes from hydrostatic equilibrium.
 - **The table inside the boundary segment.** The temperature table of the density solve, built as the solve does, read at 400 pressures inside the segment that holds the boundary, for the 2nd to the 40th segment.
-- **Case C, solved planets.** 1 $M_\oplus$ with a core of 0.325 and an ice layer of 0.1 of the planet mass, PALEOS iron and MgSiO$_3$, a 300 K surface, accepted on the full adiabat: `Seager2007:H2O` at 150 nodes.
+- **Case C, solved planets.** 1 $M_\oplus$ with a core of 0.325 and an ice layer of 0.1 of the planet mass, PALEOS iron and MgSiO$_3$, a 300 K surface, accepted on the full adiabat: `Seager2007:H2O` at 150 nodes. A spy keeps the inputs of the last adiabat of the solve, and the test runs the DOP853 reference of case B on them, with and without the cut.
 
 **How we know the right answer.**
 
@@ -156,14 +158,14 @@ The tests fail for each fault: case A without the cut, case B2 with the cut at $
 - **Case B.** The DOP853 reference of [Adiabat integration on real profiles](#adiabat-integration-on-real-profiles), which also cuts the segment at the ice boundary with $P$ linear in $m$. It takes the boundary pressure of the code, so it checks the integration across the cut, not where the cut lies.
 - **Case B2.** The reference takes its boundary pressure from $\mathrm{d}P/\mathrm{d}m = -G m / (4 \pi r^4)$, integrated inward from the outer node of the segment with $r^3$ linear in $m$ (constant density over the segment). Integrated on to the inner node, it meets the stored node pressure within $1.9 \times 10^{-4}$ (relative). The case checks where the cut lies; the bounds lie above the measured miss of $P$ linear in $m$. A further test drops a node of a top segment and predicts its pressure from its 2 neighbours at its own mass: $P$ linear in $m$ comes back within 1 %, while $\ln P$ linear in $m$, the rule of the CMB, misses the top cell of `dummy` by more than 50 %.
 - **The table.** A DOP853 march over the segment from the temperature of its outer node, cut at the same pressure.
-- **Case C.** A layer without a T-dependent EOS has no adiabatic gradient, so it holds the surface temperature exactly.
+- **Case C.** A layer without a T-dependent EOS has no adiabatic gradient, so it holds the surface temperature exactly. On the last adiabat of the solve, the reference of case B gives the answer; without the cut the mantle would start at the deepest ice node, not at the boundary pressure.
 
-**Why it matters.** Every solve with an ice layer in the temperature modes `adiabatic` and `adiabatic_from_cmb` takes the temperature of its mantle and core from this integration. On the solved 1 $M_\oplus$ planet of case C, at 150, 300 and 600 nodes and mass tolerances (`tolerance_outer`) of $10^{-3}$, the default, and $10^{-4}$ (6 pairs with and without the cut), the cut raises the centre temperature by 1.9 to 7.0 K and the central pressure by $1.2 \times 10^{-4}$ to $7.8 \times 10^{-4}$ with `PALEOS:H2O`, in every pair. The mean centre temperature of the 6 runs is 923.61 K without the cut and 928.44 K with it; every run with the cut lies above every run without it, by at least 0.42 K. In 2 of the 6 pairs per EOS, both at the tolerance of $10^{-4}$, one run ends at the iteration limit (`max_iter`), not `strict`; the 4 pairs that end `strict` on both sides give the same ranges of the centre temperature. These solves are measured, not asserted by a test. With `Seager2007:H2O` it moves the centre temperature by $-0.9$ to $+0.02$ K. The radius moves by $-4.3 \times 10^{-4}$ to $+3.1 \times 10^{-4}$ with either EOS, with no common sign, and it spreads by $7.3 \times 10^{-4}$ to $1.05 \times 10^{-3}$ over these meshes and tolerances, with or without the cut.
+**Why it matters.** Every solve with an ice layer in the temperature modes `adiabatic` and `adiabatic_from_cmb` takes the temperature of its mantle and core from this integration. On the planet of case C with a `PALEOS:H2O` layer, the cut raises the centre temperature by 1.9 to 7.0 K in every one of 6 pairs of solves with and without it; these solves are measured, not asserted (box below the table).
 
 ![Temperature difference from the cut DOP853 reference against pressure for an H2O layer from the 5th node segment of default start 0, with and without the cut](../assets/validation/adiabat_ice_boundary.svg#only-light){ width="80%" }
 ![Temperature difference from the cut DOP853 reference against pressure for an H2O layer from the 5th node segment of default start 0, with and without the cut](../assets/validation/adiabat_ice_boundary_dark.svg#only-dark){ width="80%" }
 
-**How to read the plot.** The x-axis is the pressure in GPa at the nodes of default start 0. A `PALEOS:H2O` layer starts in the middle of the 5th node segment from the top, at the vertical line. The y-axis is the distance in K from the DOP853 reference with the cut, on a logarithmic scale; a node that meets the reference to round-off is drawn at $10^{-3}$ K. The solid line is the integration of Zalmoxis, which the test bounds by 1 K at every node. The dashed line is the reference without the cut, one mixture per segment: it meets the solid line above the boundary and lies 48 to 157 K off below it. A pass means that the solid line stays below 1 K.
+**How to read the plot.** The x-axis is the pressure in GPa at the nodes of default start 0. A `PALEOS:H2O` layer starts in the middle of the 5th node segment from the top, at the vertical line. The y-axis is the distance in K from the DOP853 reference with the cut, on a logarithmic scale; a node that meets the reference to round-off is drawn at $10^{-3}$ K. The solid line is the integration of Zalmoxis, which the test bounds by 1 K at every node. The dashed line is the reference without the cut, one mixture per segment: it meets the solid line above the boundary and lies 48 to 157 K off below it. The test passes when the solid line stays below 1 K.
 
 Measured values, macOS arm64:
 
@@ -181,6 +183,15 @@ Measured values, macOS arm64:
 | table, every case | lookup at the inner node | at most 0.0037 K | 0.01 K |
 | dropped node, top 4 segments | $P$ linear in $m$, relative | at most $9.4 \times 10^{-3}$ | 0.01 |
 | C, `Seager2007:H2O` | ice nodes from 300 K | to round-off | $10^{-9}$ K |
+| C, last adiabat of the solve | from the reference with the cut, without it | $1.6 \times 10^{-4}$ K, 0.72 K | 0.05 K, above 0.05 K |
+
+??? info "Measured solves with `PALEOS:H2O` (not asserted by a test)"
+    - Setup: the planet of case C with a `PALEOS:H2O` layer, at 150, 300 and 600 nodes and mass tolerances (`tolerance_outer`) of $10^{-3}$, the default, and $10^{-4}$: 6 pairs of solves with and without the cut.
+    - Centre temperature: the cut raises it by 1.9 to 7.0 K in every pair. The mean of the 6 runs is 923.61 K without the cut and 928.44 K with it; every run with the cut lies above every run without it, by at least 0.42 K.
+    - Central pressure: the cut raises it by $1.2 \times 10^{-4}$ to $7.8 \times 10^{-4}$ (relative) in every pair.
+    - Iteration limit: in 2 of the 6 pairs, both at the tolerance of $10^{-4}$, one run ends at the iteration limit (`max_iter`), not `strict`. The 4 pairs that end `strict` on both sides give the same range of the centre-temperature change, 1.9 to 7.0 K.
+    - `Seager2007:H2O`: the cut moves the centre temperature by $-0.9$ to $+0.02$ K.
+    - Radius: the cut moves it by $-4.3 \times 10^{-4}$ to $+3.1 \times 10^{-4}$ with either EOS, with no common sign; it spreads by $7.3 \times 10^{-4}$ to $1.05 \times 10^{-3}$ over these meshes and tolerances, with or without the cut.
 
 **Known limits.**
 
@@ -192,7 +203,7 @@ Measured values, macOS arm64:
     - References: the closed form of case A; the DOP853 reference of [Adiabat integration on real profiles](#adiabat-integration-on-real-profiles) with the ice cut at $P$ linear in $m$ (case B) or at the hydrostatic pressure (case B2); a DOP853 march over the boundary segment (relative tolerance $10^{-12}$, absolute $10^{-14}$ on $\ln T$) for the table.
     - Tolerances: see the table above.
     - Test ids: `tests/test_ice_boundary_cut.py` (unit tier: `::test_the_adiabat_follows_each_layer_across_the_ice_boundary`, `::test_the_cut_meets_the_closed_form_anywhere_in_a_segment`, `::test_a_two_layer_profile_ignores_core_mantle_mass`, `::test_a_thin_mantle_inside_one_segment_keeps_the_profile_monotone`, `::test_a_t_independent_layer_must_hold_one_temperature`); `tests/test_adiabat_real_profiles.py::test_the_adiabat_meets_the_reference_across_an_ice_boundary`, `::test_the_ice_boundary_pressure_meets_hydrostatic_equilibrium`, `::test_the_lookup_follows_the_cut_inside_the_boundary_segment`, `::test_pressure_is_near_linear_in_mass_over_a_top_segment`; `tests/test_ice_layer_solves.py` (nightly job `paleos_adiabat`).
-    - Invariant in the code: `compute_adiabatic_temperature` raises `StructureInvariantError` when a layer without a T-dependent component does not hold one temperature over its integrated nodes (`::test_a_t_independent_layer_must_hold_one_temperature`).
+    - Invariant in the code: `compute_adiabatic_temperature` calls `_check_profile` on every profile, which raises `StructureInvariantError` when a layer without a T-dependent component does not hold one temperature over its integrated nodes (`tests/test_ice_boundary_cut.py::test_a_t_independent_layer_must_hold_one_temperature`).
     - Command: `pytest -o "addopts=" tests/test_ice_boundary_cut.py tests/test_adiabat_real_profiles.py -k "ice or boundary or top_segment"`; add `--validation-plots` to write the plot; `pytest -o "addopts=" tests/test_ice_layer_solves.py` for case C.
 
 ## Temperature at the CMB and the centre
