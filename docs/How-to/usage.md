@@ -69,7 +69,7 @@ Run it as before:
 python -m zalmoxis -c my_ice.toml
 ```
 
-The last 18 of the 150 nodes in `planet_profile.txt` lie in the ice layer, which starts at the enclosed mass $0.9 M$. The temperature column follows the H$_2$O adiabat from 300 K at the surface to 509 K at the deepest ice node near 11.5 GPa, and the mantle adiabat continues below the boundary to 929 K at the centre. With `ice_layer = "Seager2007:H2O"`, an EOS without temperature dependence, every ice node stays at 300 K. [Layer boundaries inside a node segment](../Explanations/adiabat_integration.md#layer-boundaries-inside-a-node-segment) explains how the adiabat crosses the boundary between 2 nodes.
+The last 18 of the 150 nodes in `planet_profile.txt` lie in the ice layer, which starts at the enclosed mass $0.9 M$. The temperature column follows the H$_2$O adiabat from 300 K at the surface to 509 K at the deepest ice node near 11.5 GPa, and the adiabat continues through the mantle and the core to 929 K at the centre. With `ice_layer = "Seager2007:H2O"`, an EOS without temperature dependence, every ice node stays at 300 K. [Layer boundaries inside a node segment](../Explanations/adiabat_integration.md#layer-boundaries-inside-a-node-segment) explains how the adiabat crosses the boundary between 2 nodes.
 
 ## Output files
 

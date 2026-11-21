@@ -52,11 +52,11 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 
 ## How the density solve reads the temperature over the top cell
 
-Between the top of the planet and the first node below it, the density solve reads the adiabat at 64 pressures, not a straight line between the 2 ends.
+Over the top cell the density solve reads the adiabat at 64 pressures, not a straight line between its 2 ends.
 
 The density solve reads $T$ from a table of this adiabat against $\log_{10} P$.
 The solve builds the table on the nodes of the previous outer pass ([Full-adiabat rule](process_flow.md#full-adiabat-rule)).
-No node lies inside the top cell.
+The top cell is the pressure interval between the top of the planet and the first node below it; no node lies inside it.
 Its ends depend on the top:
 
 - **Padded top:** from 1 bar to the outermost node with a positive pressure.
@@ -65,7 +65,7 @@ Its ends depend on the top:
 
 The solve adds 64 pressures over the cell to the table, evenly spaced in $\log P$: the shell.
 On the shell, the code integrates the adiabat inward from the temperature of the top node, for both anchors.
-Over an unpadded cell each shell point takes the mass of $P$ linear in $m$ between the 2 ends of the cell, so the shell changes layer where the adiabat cuts the cell ([the ice boundary](#the-ice-boundary)).
+Over an unpadded cell each shell point takes its enclosed mass $m$ from $P$ linear in $m$ between the 2 ends, so the shell changes layer where the adiabat cuts the cell ([the ice boundary](#the-ice-boundary)).
 Over a padded cell, which the adiabat does not cut, the shell takes the mixture of the deeper node of the cell with the surface anchor and of the first padded node with the CMB anchor.
 
 On the stored profiles the cell spans 2 to 4 decades in pressure.
@@ -77,29 +77,29 @@ A straight line in $\log_{10} P$ over it lies 9 to 14 K off on the 2 PROTEUS pro
 
 What does the routine do when the inner-core boundary (ICB), the core-mantle boundary (CMB) or the boundary between the mantle and an ice layer lies between 2 grid nodes?
 
-Each node takes its temperature from its neighbour on the anchor side, by the integration over the node segment between them.
-When a boundary lies inside a segment, the routine cuts the segment there and integrates each piece with the mixture of its own layer.
+Each node takes its temperature from the integration over the node segment from its neighbour on the anchor side.
+When a boundary lies inside a segment, the routine cuts the segment there and integrates each piece (between 2 cuts, or a cut and a node) with the mixture of its layer.
 The cut lies at the pressure of the boundary:
 
 - **CMB:** the pressure at the core mass, with $\ln P$ taken linear in the enclosed mass $m$ between the 2 nodes.
-- **Ice boundary:** the pressure at the core-plus-mantle mass, with $P$ taken linear in $m$ between the 2 nodes ([the ice boundary](#the-ice-boundary)).
-- **ICB:** the pressure that the [inner-core boundary rule](mixing.md#the-inner-core-boundary) gives for the inner-core mass, with $P$ taken linear in $m^{2/3}$ between the core nodes on either side of it. When the ICB lies in the node segment of the CMB, the point of the CMB cut takes the place of the upper node ([the pressure at the inner-core boundary](mixing.md#the-pressure-at-the-inner-core-boundary)).
+- **Ice boundary:** the pressure at the core-plus-mantle mass, with $P$ linear in $m$ between the 2 nodes ([the ice boundary](#the-ice-boundary)).
+- **ICB:** the pressure that the [inner-core boundary rule](mixing.md#the-inner-core-boundary) gives for the inner-core mass, with $P$ taken linear in $m^{2/3}$ between the core nodes on either side of it. In the node segment of the CMB, the CMB point takes the place of the upper node ([the pressure at the inner-core boundary](mixing.md#the-pressure-at-the-inner-core-boundary)).
 
-So the cut and the ICB rule take one pressure for one inner-core mass.
+So the cut and the ICB rule take one pressure for one inner-core mass, unless the ICB, the CMB and the ice boundary share one segment (the CMB point then takes $P$ linear in $m$).
 Other segments take the mixture of the node they fill.
 
-The cut matters where the gradients differ.
 At the ICB of a pure-iron core at 258 GPa and 5537 K (on the Anzellini curve), $\nabla_\mathrm{ad}$ of the default side tables is 0.22 on the solid side and 0.44 on the liquid side.
-Without the cut, the segment that holds the ICB would take one of the 2 values over its whole length, and the first inner-core node would miss the adiabat by up to 21 K.
+Without the cut, the segment would take one of the 2 values, and the first inner-core node would miss the adiabat by up to 21 K.
 
 **Where this is checked.** [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre) for the CMB and [The adiabat across the ICB](../Validation/hydrostatic_structure.md#the-adiabat-across-the-icb) for the ICB.
 
 ### The ice boundary
 
 Why do the CMB and the ice boundary take different rules?
+In short: a top cell spans up to 4 decades in $P$, and there $\ln P$ linear in $m$ puts the boundary pressure far too low; a segment at the CMB spans about 0.03 in $\ln P$, where the 2 rules agree.
+
 In hydrostatic equilibrium $\mathrm{d}P/\mathrm{d}m = -G m / (4 \pi r^4)$, and over one segment $m$ and $r$ change little, so $P$ is close to linear in $m$.
-A segment at the CMB spans about 0.03 in $\ln P$, where the 2 rules agree.
-A top cell spans up to 4 decades in $P$, and there $\ln P$ linear in $m$ puts the pressure at the middle mass of the cell at 1/50 of its value: 12 MPa instead of 0.58 GPa on the default start with its top at $1.2 \times 10^5$ Pa.
+On the default start with its top at $1.2 \times 10^5$ Pa, $\ln P$ linear in $m$ puts the pressure at the middle mass of the top cell at 12 MPa, and $P$ linear in $m$ at 0.58 GPa.
 With $P$ linear in $m$ that pressure lies 0.44 % above the integral of $\mathrm{d}P/\mathrm{d}m$ inside the cell.
 
 When the CMB lies in the same segment, its cut also takes $P$ linear in $m$, so the 2 cuts keep their order and the mantle between them keeps its piece.
