@@ -346,6 +346,7 @@ def test_an_accept_with_the_liquid_off_the_liquidus_is_not_converged(
     assert named == (lag > 1e-3)
 
 
+@pytest.mark.physics_invariant
 def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
     setup, monkeypatch, caplog
 ):
@@ -385,7 +386,7 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
     m23 = [c.kwargs['m23'] for c in calls]
     assert m23 and all(m23), m23
     rules = [c.kwargs['cmb_point_rule'] for c in calls]
-    assert blends == sorted(blends) and set(blends) - {0.0} == {0.25, 0.5, 0.75, 1.0}, blends
+    assert blends == sorted(blends) and set(blends) == {0.25, 0.5, 0.75, 1.0}, blends
     assert [r is None for r in rules] == [b < 1.0 for b in blends], (blends, rules)
     final = [c.kwargs for c in spy.call_args_list if 'm23' not in c.kwargs]  # the core result
     assert final and final[-1]['cmb_point_rule'] is not None
@@ -417,8 +418,9 @@ def test_a_cap_accept_on_the_blend_ramp_is_refused(setup, monkeypatch, caplog, p
     """2 to 4 outer passes of the 2480 K Fe-S core, with a ramp trigger of 1 so the ramp starts
     after the first pass on every CPU, end on the cap accept of a pass of the blend ramp at
     blend 0.25, 0.5 or 0.75. No ICB reader of these passes gets a CMB-point rule, and the
-    full-adiabat rule refuses the accept. With that refusal off (accept keys kept), the check of
-    the accepted pass raises StructureInvariantError."""
+    full-adiabat rule refuses the accept (accepted_on and accept_mass_limit None, converged_mass
+    False). With that refusal off (accept keys kept), the check of the accepted pass raises
+    StructureInvariantError."""
     from zalmoxis import solver as zs
     from zalmoxis.invariants import StructureInvariantError
 
@@ -438,6 +440,7 @@ def test_a_cap_accept_on_the_blend_ramp_is_refused(setup, monkeypatch, caplog, p
     assert rules and all(r is None for r in rules)  # every reader site of every pass
     assert res['adiabat_blend'] == blend and res['converged'] is False, res['adiabat_blend']
     assert f'No accept of a pass at adiabat blend {blend:.2f}' in caplog.text
+    assert res['accepted_on'] is res['accept_mass_limit'] is None and not res['converged_mass']
     monkeypatch.setattr(zs, '_REFUSED', dict(zs._REFUSED, converged=True))
     with pytest.raises(StructureInvariantError, match='not on the full adiabat'):
         _fes_cap(setup, caplog, max_iterations_outer=passes)
@@ -732,6 +735,7 @@ def test_the_bulk_s_of_the_core_follows_the_icb(fe_s_iso):
         )
 
 
+@pytest.mark.physics_invariant
 def test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb(setup, monkeypatch):
     """At 2480 K at the surface the Fe-S core on the adiabat holds a partial inner core; the
     adiabat of the returned pass (the last pass adiabat, recorded by a spy) took the inner-core
@@ -753,9 +757,8 @@ def test_the_adiabat_of_a_converged_liquidus_solve_takes_its_icb(setup, monkeypa
     m_ic, cmb = res['core']['M_ic'], res['cmb_mass']
     assert 0.0 < m_ic < cmb and res['accepted_on'] == 'strict'
     assert res['adiabat_blend'] == res['adiabat_table_blend'] == 1.0
-    tol = solver._default_solver_params(setup[1]['planet_mass'])['tolerance_outer']
-    assert res['mass_error_at_accept'] <= res['accept_mass_limit'] <= tol
-    assert abs(res['icb_superheat']) <= solver._ICB_SUPERHEAT_TOL and res['icb_converged']
+    assert res['mass_error_at_accept'] <= res['accept_mass_limit'] <= 1e-3
+    assert abs(res['icb_superheat']) <= 0.5 and res['icb_converged']  # K
     used = _pass_adiabat_icbs(spy, res)
     assert used and used[-1] == res['icb_adiabat']
     assert abs(used[-1] - m_ic) <= 1e-3 * cmb, (used[-1] / cmb, m_ic / cmb)
