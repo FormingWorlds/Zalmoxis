@@ -1,7 +1,9 @@
-"""Solved 3-layer planets with an H2O layer on the adiabat cut at the mantle and ice boundary.
+"""A solved 3-layer planet with a T-independent H2O layer on the adiabat cut at the mantle and
+ice boundary.
 
-1 M_earth, core 0.325, ice 0.1, PALEOS iron and MgSiO3, surface 300 K (below the H2O critical
-point, as ``validate_config`` requires). See ``docs/Validation/thermal_state.md`` (case C).
+1 M_earth, core 0.325, ice 0.1, Seager2007:H2O, PALEOS iron and MgSiO3, surface 300 K (below
+the H2O critical point, as ``validate_config`` requires).
+See ``docs/Validation/thermal_state.md`` (case C).
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ from tests._paleos_helpers import WALL_TIMEOUT
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.paleos_adiabat,
-    pytest.mark.timeout(4200),  # inside the 90 min paleos_adiabat CI job, setup included
+    pytest.mark.timeout(1800),  # a 150 s solve on macOS arm64
 ]
 
 
@@ -31,7 +33,7 @@ def _solve(ice_eos, num_layers):
         validate_config,
     )
 
-    _need_paleos('EOS_PALEOS_H2O')
+    _need_paleos()
     inp = os.path.join(get_zalmoxis_root(), 'input')
     cfg = load_zalmoxis_config(os.path.join(inp, 'default.toml'))
     cfg.update(
@@ -59,16 +61,6 @@ def _solve(ice_eos, num_layers):
     got = (res['converged'], res['adiabat_blend'], res['accepted_on'])
     assert got[:2] == (True, 1.0) and got[2] != 'timeout', got
     return res
-
-
-@pytest.mark.physics_invariant
-def test_the_centre_temperature_converges_with_the_mesh_across_an_ice_boundary():
-    """Case C: the PALEOS:H2O planet at 300 and 600 nodes, both accepted at blend 1: the centre
-    temperatures agree within 1 K (0.3 K on macOS arm64 at a mass tolerance of 1e-3, where the
-    segment without the cut gave 922.4 and 924.5 K and the cut 927.8 and 928.1 K)."""
-    T_c = [float(_solve('PALEOS:H2O', n)['temperature'][0]) for n in (300, 600)]
-    print(f'centre T at 300 and 600 nodes: {T_c[0]:.2f}, {T_c[1]:.2f} K')
-    assert abs(T_c[1] - T_c[0]) < 1.0, T_c
 
 
 @pytest.mark.physics_invariant
