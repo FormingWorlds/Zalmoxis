@@ -383,7 +383,7 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
     _fes_cap(setup, caplog, max_iterations_outer=8)
     calls = [c for c in spy.call_args_list if 'm23' in c.kwargs]  # the ICB updates
     m23 = [c.kwargs['m23'] for c in calls]
-    assert m23[-1] is True and m23 == sorted(m23), m23
+    assert m23 and all(m23), m23
     rules = [c.kwargs['cmb_point_rule'] for c in calls]
     assert blends == sorted(blends) and set(blends) - {0.0} == {0.25, 0.5, 0.75, 1.0}, blends
     assert [r is None for r in rules] == [b < 1.0 for b in blends], (blends, rules)
