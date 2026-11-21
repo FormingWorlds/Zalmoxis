@@ -328,6 +328,7 @@ class TestReportTableBands:
         ('adiabatic', 'Seager2007:H2O', 0.0, 8.0 * (1 - 5e-13)),
         ('adiabatic_from_cmb', 'Seager2007:H2O', 0.0, 8.0),
         ('adiabatic_from_cmb', 'Seager2007:H2O', 0.0, 8.0 * (1 + 5e-13)),
+        ('adiabatic_from_cmb', 'Seager2007:H2O', 0.0, 8.0 * (1 - 5e-13)),
     ],
     ids=[
         'surface',
@@ -345,12 +346,14 @@ class TestReportTableBands:
         'surface_ice_just_below_node',
         'cmb_ice_on_node',
         'cmb_ice_just_above_node',
+        'cmb_ice_just_below_node',
     ],
 )
 def test_gradient_nodes_are_the_adiabat_reads(mats, monkeypatch, mode, ice, surface_p, cmm):
     """The gradient entry covers exactly the nodes where compute_adiabatic_temperature reads
-    nabla, an ice boundary on a node or within 1e-12 of it included; its midpoint substeps read
-    further pressures between those nodes."""
+    nabla, an ice boundary on a node or within 1e-12 of it included (the surface anchor reads
+    the cut rule m > core_mantle_mass, the CMB anchor the layer rule); its midpoint substeps
+    read further pressures between those nodes."""
     md, _, grad, _ = mats
     md = {'WolfBower2018:MgSiO3': md['X:MgSiO3']}
     layers = {'core': 'Seager2007:iron', 'mantle': 'WolfBower2018:MgSiO3', 'ice_layer': ice}

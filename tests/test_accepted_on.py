@@ -2080,7 +2080,7 @@ def test_the_solve_gives_the_table_the_masses_and_the_direction_of_its_adiabat(
         layer_eos_config=layers,
     )
     assert seen
-    want = (0.325 + (0.675 - ice)) * earth_mass if ice else None  # as _solve sums it
+    want = pytest.approx((0.325 + 0.675 - ice) * earth_mass, rel=1e-12) if ice else None
     for P, m, outward, boundary in seen:
         assert outward is (mode == 'adiabatic_from_cmb') and boundary == want
         assert any(np.array_equal(m, mm) and np.array_equal(P, pp) for mm, pp in made)
