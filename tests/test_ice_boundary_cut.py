@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from zalmoxis.eos.temperature import compute_adiabatic_temperature
@@ -131,6 +131,7 @@ def test_the_cut_meets_the_closed_form_anywhere_in_a_segment(k, f, anchor, ice, 
     frac=st.one_of(st.floats(0.0, 1.0), st.sampled_from([0.0, 1.0])),
     anchor=st.sampled_from(['surface', 'cmb']),
 )
+@example(frac=2.220446049250313e-16, anchor='surface')  # within 1e-9 of the CMB mass
 def test_a_two_layer_profile_ignores_core_mantle_mass(frac, anchor):
     """Without an ice layer the profile is bit-equal for every ``core_mantle_mass`` from the
     CMB mass to the planet mass (a 2-layer caller may pass a mantle mass fraction above 0)."""
