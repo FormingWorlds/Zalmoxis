@@ -790,14 +790,18 @@ def _check_accepted(
             'of the target surface pressure %.4g Pa (padded).',
             config_params['target_surface_pressure'],
         )
-        p, m = (np.asarray(result[k]) for k in ('pressure', 'mass_enclosed'))
-        # the ice boundary above the outermost node with P > 0 lies in the padded top cell
-        if adiabat_asked and 'ice_layer' in mixes and result['core_mantle_mass'] > m[p > 0][-1]:
+        p, m = (np.asarray(result.get(k, ())) for k in ('pressure', 'mass_enclosed'))
+        cmm = result.get('core_mantle_mass')
+        # an ice boundary between the outermost node with P > 0 and the stop mass is not cut
+        uncut = cmm is not None and (p > 0).any() and m[p > 0][-1] < cmm <= m[-1]
+        if adiabat_asked and 'ice_layer' in mixes and uncut:
             logger.warning(
                 'The mantle and ice boundary lies in the padded top cell, which the adiabat '
-                'does not cut, so the nodes below it miss the adiabat of the cut boundary '
-                '(known limit: docs/Explanations/adiabat_integration.md, Known limits of the '
-                'integration).'
+                'does not cut, so %s misses the adiabat of the cut boundary (known limit: '
+                'docs/Explanations/adiabat_integration.md, Known limits of the integration).',
+                'only the padded node'
+                if config_params.get('temperature_mode') == 'adiabatic_from_cmb'
+                else 'every node below it',
             )
     return result
 
