@@ -188,3 +188,50 @@ def test_the_layer_lags_split_the_nodes_by_the_core_rule():
     T[0] = np.nan
     mantle, core = _layer_lags(T, adiabat, m, p, cmb)
     assert mantle == 16.0 and np.isnan(core)
+
+
+def _padded(cmm):
+    """An accepted result with 2 padded nodes (P = 0) above 4 nodes at P > 0."""
+    return {
+        'converged': True,
+        'padded': True,
+        'adiabat_computed': True,
+        'adiabat_blend': 1.0,
+        'adiabat_table_blend': 1.0,
+        'pressure': np.array([3e11, 1e11, 1e10, 1e8, 0.0, 0.0]),
+        'mass_enclosed': np.array([1e23, 2e24, 4e24, 5.9e24, 5.97e24, 5.97e24]),
+        'core_mantle_mass': cmm,
+    }
+
+
+def test_an_ice_boundary_above_the_outer_positive_node_is_in_the_padded_cell():
+    """The boundary lies in the padded top cell exactly when it is above the outermost node
+    with P > 0 (5.9e24 kg here)."""
+    from zalmoxis.solver import _ice_boundary_in_padded_cell
+
+    assert _ice_boundary_in_padded_cell(_padded(5.95e24))
+    assert not _ice_boundary_in_padded_cell(_padded(5.9e24))
+    assert not _ice_boundary_in_padded_cell(_padded(5.0e24))
+
+
+@pytest.mark.parametrize(
+    ('cmm', 'asked', 'warned'),
+    [(5.95e24, True, True), (5.0e24, True, False), (5.95e24, False, False)],
+    ids=['in_cell', 'below_cell', 'no_adiabat'],
+)
+def test_a_padded_cell_with_the_ice_boundary_warns(monkeypatch, caplog, cmm, asked, warned):
+    """An accepted padded profile warns that its uncut top cell holds the ice boundary only on
+    an adiabat and with the boundary above the outermost node with P > 0."""
+    import os
+
+    from zalmoxis import get_zalmoxis_root
+    from zalmoxis import solver as zs
+    from zalmoxis.config import load_zalmoxis_config
+
+    cfg = load_zalmoxis_config(os.path.join(get_zalmoxis_root(), 'input', 'default.toml'))
+    cfg['layer_eos_config'] = dict(cfg['layer_eos_config'], ice_layer='Seager2007:H2O')
+    monkeypatch.setattr(zs, 'check_accepted', lambda *a, **k: None)
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
+    zs._check_accepted(_padded(cmm), {}, cfg, {}, None, None, None, adiabat_asked=asked)
+    assert 'surface stop' in caplog.text
+    assert ('lies in the padded top cell' in caplog.text) is warned, caplog.text
