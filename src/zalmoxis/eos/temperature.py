@@ -137,13 +137,13 @@ def compute_adiabatic_temperature(
     holds the CMB, the ICB or the boundary of an ice layer is cut there into pieces that each
     take the mixture of their own layer: the CMB with ln P linear in the enclosed mass between
     the 2 nodes, the ICB at the pressure of ``core_profile.icb_pressure``, the ice boundary with
-    P linear in the enclosed mass (near the top P follows the mass above it); when the CMB and
-    the ice boundary lie in one segment, both take P linear in m, held in order. A piece that ends on a node that lies on a
-    boundary takes the mixture of its middle. T is held below ``ADIABAT_P_FLOOR`` (1e5 Pa,
-    where the PALEOS rock and iron tables start), and a padded node (P = 0) counts as that
-    floor. T is also held over a layer without a T-dependent component and from the first
-    substep where nabla_ad is missing or not positive. Each node is capped at 1e5 K, and with
-    ``anchor='cmb'`` floored at 100 K.
+    P linear in the enclosed mass (hydrostatic over one segment); when the CMB and the ice
+    boundary lie in one segment, both take P linear in m, which keeps their order. A piece that
+    ends on a node that lies on a boundary takes the mixture of its middle. T is held below
+    ``ADIABAT_P_FLOOR`` (1e5 Pa, where the PALEOS rock and iron tables start), and a padded node
+    (P = 0) counts as that floor. T is also held over a layer without a T-dependent component
+    and from the first substep where nabla_ad is missing or not positive. Each node is capped at
+    1e5 K, and with ``anchor='cmb'`` floored at 100 K.
 
     Parameters
     ----------
@@ -210,7 +210,8 @@ def compute_adiabatic_temperature(
         or 'cmb', a ``surface_temperature`` that is not above 0 K and at most 1e5 K, or
         ``anchor='cmb'`` without a ``cmb_temperature`` from 100 K to 1e5 K (the node caps).
     StructureInvariantError
-        The profile is not finite and positive at every node, or rises outward from its anchor.
+        The profile is not finite and positive at every node, rises outward from its anchor, or
+        changes over the integrated nodes of a layer without a T-dependent component.
     """
     from ..core_profile import icb_pressure
     from ..mixing import any_component_is_tdep, get_mixed_nabla_ad
@@ -270,9 +271,10 @@ def compute_adiabatic_temperature(
     def mixture_at(m):
         return get_layer_mixture(m, cmb_mass, core_mantle_mass, layer_mixtures, icb_mass)
 
+    ice_mass = {core_mantle_mass} if 'ice_layer' in layer_mixtures else set()
     bounds = [
         b
-        for b in sorted({icb_mass or 0.0, cmb_mass, core_mantle_mass})  # the layer boundaries
+        for b in sorted({icb_mass or 0.0, cmb_mass} | ice_mass)  # the layer boundaries
         if b > 0 and mixture_at(b * (1 - 1e-9)) is not mixture_at(b * (1 + 1e-9))
     ]
     for i, j in steps:  # node i takes its T from node j, piece by piece across layer boundaries
@@ -282,12 +284,12 @@ def compute_adiabatic_temperature(
             (m_lo, p_lo), (m_hi, p_hi) = sorted(ends)
             # CMB: ln P linear in m; ICB: as its readers; ice: P linear in m (hydrostatic), and
             # the CMB too when both lie in the segment, so the 2 cuts keep their order
-            ice = cmb_mass < core_mantle_mass < m_hi and core_mantle_mass in bounds
-            lp = (p_lo, p_hi) if ice else (math.log(p_lo), math.log(p_hi))
+            shared = m_lo < cmb_mass < core_mantle_mass < m_hi and core_mantle_mass in bounds
+            lp = (p_lo, p_hi) if shared else (math.log(p_lo), math.log(p_hi))
             p_cmb = np.interp(cmb_mass, (m_lo, m_hi), lp)
-            p_cmb = float(p_cmb) if ice else math.exp(p_cmb)
+            p_cmb = float(p_cmb) if shared else math.exp(p_cmb)
             top = (cmb_mass, p_cmb) if m_lo < cmb_mass < m_hi else (m_hi, p_hi)
-            cut, p_in = [], p_lo
+            cut = []
             for b in (b for b in bounds if m_lo < b < m_hi):
                 if b == cmb_mass:
                     p_b = p_cmb
@@ -295,8 +297,7 @@ def compute_adiabatic_temperature(
                     p_b = float(np.interp(b, (m_lo, m_hi), (p_lo, p_hi)))
                 else:
                     p_b = icb_pressure((m_lo, top[0]), (p_lo, top[1]), b)
-                p_in = min(p_b, p_in)  # P must not rise outward across 2 rules in one segment
-                cut.append((b, p_in))
+                cut.append((b, p_b))
             ends[1:1] = cut[::-1] if ends[0][0] > m_i else cut
         on_bound = any(abs(m_i - b) <= 1e-12 * b for b in bounds)
         for (m_a, p_a), (m_b, p_b) in zip(ends, ends[1:]):
