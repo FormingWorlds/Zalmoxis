@@ -1799,6 +1799,27 @@ class TestLayerTables:
             for a, b in zip(mantle, whole):
                 np.testing.assert_array_equal(a, b)
 
+    def test_a_split_pass_gives_the_mantle_table_the_ice_boundary_point(self):
+        """With the core split off, an ice boundary inside a mantle node segment below the top
+        cell adds 1 point to the mantle table, which equals the table of the mantle nodes with
+        that boundary; the core part is the one of the pass without a boundary."""
+        from zalmoxis.solver import _adiabat_table, _layer_tables
+        from zalmoxis.structure_model import is_core
+
+        p = np.geomspace(3.6e11, 1e5, 20)
+        m = np.linspace(1e23, M_E, 20)
+        t = np.where(np.arange(20) < 8, 9000.0, 3000.0) * (p / 1e5) ** 0.01
+        cmb, ice = 0.5 * (m[7] + m[8]), 0.5 * (m[14] + m[15])
+        shell = lambda q, t_top, m_: t_top * (q / q[0]) ** 0.1  # noqa: E731
+        mantle, core = _layer_tables(p, t, m, cmb, shell, boundary=ice)
+        plain_mantle, plain_core = _layer_tables(p, t, m, cmb, shell)
+        out = ~is_core(m, cmb)
+        assert mantle[0].size == plain_mantle[0].size + 1
+        for a, b in zip(mantle, _adiabat_table(p[out], t[out], m[out], shell, False, ice)):
+            np.testing.assert_array_equal(a, b)
+        for a, b in zip(core, plain_core):
+            np.testing.assert_array_equal(a, b)
+
 
 @pytest.mark.unit
 def test_the_structure_odes_read_the_core_table_of_a_layered_t_in_the_core(monkeypatch):
