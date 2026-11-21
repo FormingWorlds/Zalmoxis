@@ -126,7 +126,7 @@ The first row is the center (r = 0) and the last row is the surface. Rows beyond
 ### Check the surface pressure of a result
 
 `zalmoxis.solver.main()` returns a dict with the same profiles: `result['pressure'][-1]` is the pressure $P(R)$ at the outer radius, and the target is `target_surface_pressure` of the configuration.
-A profile whose integration stopped before the outer radius is padded: `result['padded']` is True and the rows past the stop hold zero pressure. When the solver accepts a padded profile, it logs a warning (`The accepted profile ends in a surface stop: ...`); in an adiabatic temperature mode with the mantle and ice boundary in the padded top cell, it logs a second one.
+A profile whose integration stopped before the outer radius is padded: `result['padded']` is True and the rows past the stop hold zero pressure. When the solver accepts a padded profile, it logs a warning (`The accepted profile ends in a surface stop: ...`); in an adiabatic temperature mode with the mantle and ice boundary in the padded top cell, it logs a second one, which names the nodes that miss the adiabat: every node below the cell with the surface anchor (`adiabatic`), only the padded node with the CMB anchor (`adiabatic_from_cmb`).
 The accept test passes a padded profile when the target is below `pressure_tolerance` ($10^9$ Pa by default), so read `padded` and compare $P(R)$ with the target before you use the surface values.
 [Padded accepts](../Explanations/process_flow.md#padded-accepts) explains when this happens, and the tutorial [Check that a structure meets its surface pressure](../Tutorials/surface_pressure.md) shows the check step by step.
 

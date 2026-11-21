@@ -81,11 +81,11 @@ Each node takes its temperature from the integration over the node segment from 
 When a boundary lies inside a segment, the routine cuts the segment there and integrates each piece (between 2 cuts, or a cut and a node) with the mixture of its layer.
 The cut lies at the pressure of the boundary:
 
-- **CMB:** the pressure at the core mass, with $\ln P$ taken linear in the enclosed mass $m$ between the 2 nodes.
+- **CMB:** the pressure at the core mass, with $\ln P$ linear in the enclosed mass $m$ between the 2 nodes ($P$ linear in $m$ when the ice boundary shares the segment).
 - **Ice boundary:** the pressure at the core-plus-mantle mass, with $P$ linear in $m$ between the 2 nodes ([the ice boundary](#the-ice-boundary)).
 - **ICB:** the pressure that the [inner-core boundary rule](mixing.md#the-inner-core-boundary) gives for the inner-core mass, with $P$ taken linear in $m^{2/3}$ between the core nodes on either side of it. In the node segment of the CMB, the CMB point takes the place of the upper node ([the pressure at the inner-core boundary](mixing.md#the-pressure-at-the-inner-core-boundary)).
 
-So the cut and the ICB rule take one pressure for one inner-core mass, unless the ICB, the CMB and the ice boundary share one segment (the CMB point then takes $P$ linear in $m$).
+So the cut and the ICB rule take one pressure for one inner-core mass, unless the ICB, CMB and ice boundary share one segment.
 Other segments take the mixture of the node they fill.
 
 At the ICB of a pure-iron core at 258 GPa and 5537 K (on the Anzellini curve), $\nabla_\mathrm{ad}$ of the default side tables is 0.22 on the solid side and 0.44 on the liquid side.
@@ -96,14 +96,12 @@ Without the cut, the segment would take one of the 2 values, and the first inner
 ### The ice boundary
 
 Why do the CMB and the ice boundary take different rules?
-In short: a top cell spans up to 4 decades in $P$, and there $\ln P$ linear in $m$ puts the boundary pressure far too low; a segment at the CMB spans about 0.03 in $\ln P$, where the 2 rules agree.
+In short: a top cell spans up to 4 decades in $P$, and there $\ln P$ linear in $m$ puts the boundary pressure far too low ([measured on a top cell](../Validation/thermal_state.md#the-adiabat-across-the-mantle-and-ice-boundary)); a segment at the CMB spans about 0.03 in $\ln P$, where the 2 rules agree.
 $P$ linear in $m$ gives equal pressure steps for equal mass steps, $\ln P$ linear in $m$ equal pressure factors.
 
 In hydrostatic equilibrium $\mathrm{d}P/\mathrm{d}m = -G m / (4 \pi r^4)$, and over one segment $m$ and $r$ change little, so $P$ is close to linear in $m$.
-On the default start with its top at $1.2 \times 10^5$ Pa, $\ln P$ linear in $m$ puts the pressure at the middle mass of the top cell at 12 MPa, and $P$ linear in $m$ at 0.58 GPa.
-With $P$ linear in $m$ that pressure lies 0.44 % above the integral of $\mathrm{d}P/\mathrm{d}m$ inside the cell.
 
-When the CMB lies in the same segment, its cut also takes $P$ linear in $m$, so the 2 cuts keep their order and the mantle between them keeps its piece.
+With the CMB in the same segment, both cuts take $P$ linear in $m$, so they keep their order and the mantle between them keeps its piece.
 A piece that ends on a node on the boundary takes the mixture of its middle, so an outward step into that node stays in the mantle.
 The T(P) table of the density solve gains the boundary as one more point, with the temperature of the adiabat there, so its lookup does not interpolate across the change of slope.
 
@@ -143,7 +141,8 @@ So the strict accept test (the result key `accepted_on` is `'strict'`) accepts a
 ## Known limits of the integration
 
 - **Water below 1 bar.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
-- **Layer boundary inside a padded top cell.** The adiabat does not cut a padded cell, and the shell takes one mixture over it ([How the density solve reads the temperature over the top cell](#how-the-density-solve-reads-the-temperature-over-the-top-cell)). When an accepted profile in an adiabatic temperature mode has the mantle and ice boundary in that cell, the solver logs a warning ([the measured size](../Validation/thermal_state.md#the-adiabat-across-the-mantle-and-ice-boundary)).
+- **Layer boundary inside a padded top cell.** The adiabat does not cut a padded cell, and the shell takes one mixture over it ([How the density solve reads the temperature over the top cell](#how-the-density-solve-reads-the-temperature-over-the-top-cell)). An ice layer thinner than the top cell puts its boundary there: with the surface anchor every node below the cell is then off, with the CMB anchor only the padded node. The solver logs a warning ([the measured size](../Validation/thermal_state.md#the-adiabat-across-the-mantle-and-ice-boundary)).
+- **CMB and ice boundary in one segment.** With no mantle node, the CMB cut takes $P$ linear in $m$, which moves the centre by 0.011 K in one measured case ([known limits](../Validation/thermal_state.md#the-adiabat-across-the-mantle-and-ice-boundary)).
 - **Core at the iron melting curve.** Where the core adiabat meets the melting curve of the PALEOS iron table, the integration follows the $\nabla_\mathrm{ad}$ column into the solid branch, while a core at constant entropy would stay on the melting curve. For 4 solves of `input/default.toml` at 2515 K the integrated centre is 724 to 732 K colder than the path at the constant table entropy of the core top, known to about the 84 to 106 K spacing of the table nodes.
 
 ## Ranges and checks of the inputs

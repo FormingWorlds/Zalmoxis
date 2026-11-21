@@ -87,11 +87,16 @@ The first-principles cases and the scan of the ICB case are not `reference_pinne
 pytest -o "addopts=" tests/test_first_principles.py tests/test_polytrope_verification.py tests/test_core_two_phase.py --validation-plots
 ```
 
-Without `--validation-plots` the tests write nothing: each compares the data of its plot with the committed pair, and a missing or stale file fails the test. 6 tests are the exceptions and make their plots only with the option:
+Without `--validation-plots` the tests write nothing: each compares the data of its plot with the committed pair, and a missing or stale file fails the test. 7 tests are the exceptions and make their plots only with the option:
 
 - the grid start-up test, the round-off start test and the top-cell lookup test, whose numbers of passes, centre temperatures and lookups can change with round-off between platforms;
 - `tests/test_adiabat_centre.py::test_the_adiabat_meets_independent_integrations_at_the_cmb_and_the_centre` (plot `adiabat_cmb_centre`);
-- `tests/test_adiabat_real_profiles.py::test_the_adiabat_meets_the_reference_across_an_ice_boundary` (plot `adiabat_ice_boundary`) and `tests/test_ice_layer_solves.py::test_a_solved_ice_planet_is_isothermal_in_the_ice_and_meets_the_cut_reference` (plot `adiabat_ice_planet`).
+- `tests/test_adiabat_real_profiles.py::test_the_adiabat_meets_the_reference_across_an_ice_boundary` (plot `adiabat_ice_boundary`);
+- the 2 solved ice planets of `tests/test_ice_layer_solves.py`, `test_a_solved_ice_planet_is_isothermal_in_the_ice_and_meets_the_cut_reference` (plot `adiabat_ice_planet`) and `test_a_solved_tdep_ice_planet_meets_the_cut_reference` (plot `adiabat_ice_planet_tdep`).
+
+The 3 plotted solves of `tests/test_core_two_phase_solve.py` (`test_an_earth_core_against_prem`, `test_a_two_layer_core_takes_its_icb_from_the_core_temperature_table` and `test_the_inner_core_of_a_pure_iron_core_grows_as_the_surface_cools`) compare the data of their plots with the committed pair only on macOS arm64 (`PLOT_CPU`); on another CPU they make their plots only with the option.
+
+Script figures appear too. The sweep over 26 setups and the Newton and Picard comparison on the PROTEUS initial structure are SVG pairs in `docs/assets/validation/` (`pressure_root_sweep*.svg`, `proteus_ic_solvers*.svg`), which `tools/validation/pressure_root_sweep.py` and `tools/validation/proteus_ic_solvers.py` write through `proteus_mpl.validation.save` with its 60 kB cap; their tool tests check the plotting code on stand-in records, not the committed pairs. The 4 thermal-state figures are PNG files in `docs/img/validation/`, made by scripts under `tools/validation/`; no test writes or checks them, and they are not limited to 60 kB.
 
 [^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-Radius Relationships for Solid Exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669(2), 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
 [^cite-luo2024]: H. Luo, C. Dorn, J. Deng, *[The interior as the dominant water reservoir in super-Earths and sub-Neptunes](https://doi.org/10.1038/s41550-024-02347-z)*, Nature Astronomy, 8(11), 1399-1407, 2024. [SciX](https://scixplorer.org/abs/2024NatAs...8.1399L/abstract).
