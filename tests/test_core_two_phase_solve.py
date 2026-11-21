@@ -351,12 +351,12 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
 ):
     """Once the adiabat has its liquid branch, every ICB update takes the liquidus root with
     m^(2/3) linear in P (m23), the mass that the superheat test and the core arrays take at that
-    pressure; the passes before it take the root linear in m (8 passes of the 2480 K Fe-S core,
-    with a ramp trigger of 1 so the ramp starts after the first pass on every CPU). The blend of
-    the updates (from the solver's debug line of each pass) does not decrease and takes each
-    step of the ramp; the updates below blend 1 give the readers no CMB-point rule, those at
-    blend 1 a rule. On the last update the rule (``_cmb_point_rule``) meets the liquid branch of
-    the solver recomputed with a node at the core mass to 1e-6 K."""
+    pressure (8 passes of the 2480 K Fe-S core, with a ramp trigger of 1 so the ramp starts
+    after the first pass on every CPU); an update on a linear profile (2 passes) takes the root
+    linear in m. The blend of the updates (from the solver's debug line of each pass) does not
+    decrease and takes each step of the ramp; the updates below blend 1 give the readers no
+    CMB-point rule, those at blend 1 a rule. On the last update the rule (``_cmb_point_rule``)
+    meets the liquid branch of the solver recomputed with a node at the core mass to 1e-6 K."""
     import inspect
 
     from zalmoxis import solver as zs
@@ -407,6 +407,9 @@ def test_the_icb_update_on_an_adiabat_takes_the_root_mass_of_the_superheat_test(
     )
     exact = adiabat_of(**inserted)[n]
     assert abs(rules[-1](pc, p[n - 1], t[n - 1]) - exact) <= 1e-6, exact
+    spy.reset_mock()
+    _fes_cap(setup, caplog, max_iterations_outer=2, temperature_mode='linear')
+    assert [c.kwargs['m23'] for c in spy.call_args_list if 'm23' in c.kwargs] == [False]
 
 
 @pytest.mark.parametrize('passes', [2, 3, 4])
