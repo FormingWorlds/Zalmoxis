@@ -161,9 +161,9 @@ def test_a_thin_mantle_inside_one_segment_keeps_the_profile_monotone(eps, anchor
     """The CMB and the ice boundary inside one node segment (a mantle thinner than one segment,
     ``core_mantle_mass`` at the fraction ``eps`` of the segment above the CMB): the profile is
     finite and falls outward at every integrated node, no piece runs against the pressure
-    order, and both cuts lie at P linear in m (with ln P linear in m for the CMB, the clip that
-    holds the order would close the mantle piece for a mantle up to H/8 of the segment mass,
-    H its ln P width)."""
+    order, and both cuts lie at P linear in m, which holds their order (with ln P linear in m
+    for the CMB, the 2 cuts would swap for a mantle up to H/8 of the segment mass, H its ln P
+    width)."""
     import zalmoxis.eos.temperature as _t
     import zalmoxis.mixing as _mix
 
@@ -188,3 +188,22 @@ def test_a_thin_mantle_inside_one_segment_keeps_the_profile_monotone(eps, anchor
         ends = np.array([p for a, b, _ in pieces for p in (a, b)])
         for want in np.interp([cmb, cmm], m[5:7], P[5:7]):
             assert np.min(np.abs(ends / want - 1)) < 1e-12, (want, pieces)
+
+
+@pytest.mark.unit
+@pytest.mark.physics_invariant
+def test_a_t_independent_layer_must_hold_one_temperature():
+    """``_check_profile`` raises when a layer without a T-dependent component changes T over the
+    integrated nodes, and keeps 2 such layers apart (each holds its own T)."""
+    from zalmoxis.eos.temperature import _check_profile
+    from zalmoxis.invariants import StructureInvariantError
+
+    core, ice, mantle = _Layer(None), _Layer(None), _Layer(0.2)
+    T = np.array([900.0, 900.0, 600.0, 300.0, 300.0])
+    _check_profile(T, 0, [core, core, mantle, ice, ice])
+    with pytest.raises(StructureInvariantError, match='changes in a T-independent layer'):
+        _check_profile(T, 0, [core, core, mantle, core, core])
+    with pytest.raises(StructureInvariantError, match='changes in a T-independent layer'):
+        _check_profile(
+            np.array([900.0, 900.0, 600.0, 300.0, 299.0]), 0, [core] * 2 + [mantle, ice, ice]
+        )
