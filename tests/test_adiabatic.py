@@ -1541,6 +1541,30 @@ class TestAdiabatTable:
             k = int(np.flatnonzero(q == p_b)[0])
             assert m_q[k] == pytest.approx(b, rel=1e-14)
 
+    @pytest.mark.parametrize('top', [1.2e5, 0.0], ids=['unpadded', 'padded'])
+    @pytest.mark.parametrize('outward', [False, True])
+    @pytest.mark.parametrize('seg', [3, 6])
+    def test_a_deeper_boundary_segment_gains_the_boundary_point(self, top, outward, seg):
+        """A boundary mass inside a node segment below the top cell adds 1 table point at its
+        pressure (P linear in m between the 2 nodes), with T from the shell stepped inward from
+        the outer node of the segment over the masses of that node and the boundary; the table
+        stays increasing in log10 P and keeps every node, for both directions of the adiabat."""
+        from zalmoxis.solver import _adiabat_table
+
+        calls, P = [], np.concatenate([np.geomspace(3.6e11, 1.1e9, 9), [top]])
+        mass, T = np.linspace(1e24, 6e24, P.size), np.linspace(5000.0, 3000.0, P.size)
+        b = mass[seg] + 0.3 * (mass[seg + 1] - mass[seg])
+        logp, Ts = _adiabat_table(P, T, mass, self._shell(calls), outward, b)
+        p_b = np.interp(b, mass[[seg, seg + 1]], P[[seg, seg + 1]])
+        deep = [c for c in calls if c[0].size == 2]  # the top shell has more points
+        assert len(deep) == 1, [c[0].size for c in calls]
+        q, T_top, m = deep[0]
+        assert np.allclose(q, [P[seg + 1], p_b], rtol=1e-15) and T_top == T[seg + 1]
+        assert np.array_equal(m, [mass[seg + 1], b])
+        k = int(np.flatnonzero(np.isclose(logp, np.log10(p_b), rtol=0, atol=1e-13))[0])
+        assert Ts[k] == pytest.approx(T[seg + 1] * (p_b / P[seg + 1]) ** 0.1, rel=1e-14)
+        assert np.all(np.diff(logp) > 0) and set(np.log10(P[P > 0])) <= set(logp)
+
     def test_a_padded_top_keeps_the_table_of_the_padded_rule(self):
         """Hypothesis over padded profiles (P = 0 at the outer node), inward (surface anchor):
         the table is bit for bit the one of the rule that adds the shell to a padded top only,
