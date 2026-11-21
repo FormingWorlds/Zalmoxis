@@ -66,7 +66,7 @@ padded True, nodes with P = 0: 1 of 150
 
 The solve accepted the profile, but its outer node has $P = 0$, not $P_t$: the profile is **padded**.
 The integration from the accepted $P_c$ stopped at $P = 0$ just below the outer radius, and the node past the stop got $P = 0$.
-The solver logs one warning for such a result (`The accepted profile ends in a surface stop: ...`).
+The solver logs a warning for such a result (`The accepted profile ends in a surface stop: ...`).
 The accept test of the pressure solve passes a profile when its Brent solve converged, no node has a negative pressure, and $\lvert P(R) - P_t \rvert$ is below `pressure_tolerance` ($10^9$ Pa by default), so it passes this one, whose miss is $P_t$.
 `accepted_on` names the test that accepted the structure: `strict` means that the mass, density and pressure tests all passed ([Convergence Checks](../Explanations/process_flow.md#convergence-checks) lists every label).
 Whether a profile ends padded depends on round-off, so your run can end reached (the integration reaches $R$); Step 2 shows the trials that decide it. If your run ends reached, find the trial of Step 2 whose $P_c$ equals `result['p_center']`; its $P(R)$ is the surface pressure of your result.
@@ -282,7 +282,7 @@ So check `padded` and $P(R)$ of every result whose surface values you use, as in
 ## Summary
 
 - `result['pressure'][-1]` is $P(R)$; compare it with `target_surface_pressure`.
-- `result['padded']` is True when the outer node has $P = 0$; Zalmoxis then logs one warning.
+- `result['padded']` is True when the outer node has $P = 0$; Zalmoxis then logs a warning.
 - The pressure solve refines a root that misses $P_t$ by more than $0.1 P_t$, and keeps the candidate closest to $P_t$.
 - In this adiabatic tutorial setup the Newton outer solver at `relative_tolerance` $10^{-9}$ only seeds the blend ramp and can still end padded; a lower `pressure_tolerance` alone did not reach the outer radius either.
 

@@ -155,7 +155,7 @@ On a tie, a reached profile wins, and then the later candidate.
 For a padded first root the evaluations of a second solve that raises therefore still count.
 For finite residuals, the result is never further from the target than the first root, or than the result without the second solve.
 A padded first root and a failed second solve log at the DEBUG level, since a Picard run can keep a padded root in hundreds of pressure solves.
-`main` logs one warning when it accepts a padded profile.
+`main` logs a warning when it accepts a padded profile.
 
 The figure shows $\lvert P(R) - P_{\mathrm{target}} \rvert / P_{\mathrm{target}}$ of the accepted profile for 26 setups built from `input/default.toml`.
 4 of the 6 setups with the Newton outer solver at `relative_tolerance` $10^{-9}$ reach the outer radius.

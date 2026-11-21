@@ -150,7 +150,7 @@ Measured once and not asserted: with a padded top, against a table with 4096 she
 - **Case B, stored profiles.** An H2O layer is put on 2 stored 2-layer structures for the temperature only, from the middle of a node segment outward: the top cell of default start 0 with its top at $1.2 \times 10^5$ Pa (surface anchor), the top cell of the PROTEUS `dummy` profile (CMB anchor), and the 2nd, 5th, 20th and 40th segment of default start 0, each with `PALEOS:H2O` and `Seager2007:H2O`. These are not solved 3-layer planets, and the 2515 K surface of default start 0 puts `PALEOS:H2O` in its fluid range.
 - **Case B2, boundary pressure.** The same 12 cases against a reference whose boundary pressure comes from hydrostatic equilibrium.
 - **The table inside the boundary segment.** The temperature table of the density solve, built as the solve does, read at 400 pressures inside the segment that holds the boundary, for the 2nd to the 40th segment.
-- **Case C, solved planets.** 1 $M_\oplus$ with a core of 0.325 and an ice layer of 0.1 of the planet mass, PALEOS iron and MgSiO$_3$, a 300 K surface and 150 nodes, each accepted on the full adiabat. One test uses a `Seager2007:H2O` layer; a second test uses a `PALEOS:H2O` layer, whose ice follows the H$_2$O adiabat inward from 300 K. Each test records the inputs of the last adiabat of its solve, on the pressures of the accepted structure, and runs the DOP853 reference of case B on them, with and without the cut.
+- **Case C, solved planets.** 1 $M_\oplus$ with a core mass fraction of 0.325 and an ice layer of 0.1 of the planet mass, PALEOS iron and MgSiO$_3$, a 300 K surface and 150 nodes, each accepted on the full adiabat. One test uses a `Seager2007:H2O` layer; a second test uses a `PALEOS:H2O` layer, whose ice follows the H$_2$O adiabat inward from 300 K. Each test records the inputs of the last adiabat of its solve, on the pressures of the accepted structure, and runs the DOP853 reference of case B on them, with and without the cut.
 
 **How we know the right answer.**
 
@@ -159,7 +159,7 @@ Measured once and not asserted: with a padded top, against a table with 4096 she
 - **Case B2.** The reference takes its boundary pressure from $\mathrm{d}P/\mathrm{d}m = -G m / (4 \pi r^4)$, integrated inward from the outer node of the segment with $r^3$ linear in $m$ (constant density over the segment). Integrated on to the inner node, it meets the stored node pressure within $1.9 \times 10^{-4}$ (relative). The case checks where the cut lies; the bounds lie above the measured miss of $P$ linear in $m$. A further test drops a node of a top segment and predicts its pressure from its 2 neighbours at its own mass: $P$ linear in $m$ comes back within 1 %, while $\ln P$ linear in $m$, the rule of the CMB, misses the top cell of `dummy` by more than 50 %.
 - **The table.** A DOP853 march over the segment from the temperature of its outer node, cut at the same pressure.
 - **Case C, `Seager2007:H2O`.** A layer whose EOS has no temperature dependence has no adiabatic gradient, so it holds the surface temperature exactly. On the last adiabat of the solve, the reference of case B gives the answer; without the cut the mantle would start at the deepest ice node, not at the boundary pressure. A cut at $\ln P$ linear in $m$, the rule of the CMB, puts the mantle start at the wrong pressure and misses the reference by 0.041 K, above the bound.
-- **Case C, `PALEOS:H2O`.** The reference of case B on the last adiabat of the solve gives the answer at every node, the ice included. The top node must hold the 300 K of the surface anchor, and the temperature must not fall inward over the ice nodes.
+- **Case C, `PALEOS:H2O`.** The reference of case B on the last adiabat of the solve gives the answer at every node, the ice included. The top node must hold the 300 K of the surface anchor, the temperature must not fall inward over the ice nodes, and the deepest ice node must be hotter than the surface.
 
 **Why it matters.** Every solve with an ice layer in the temperature mode `adiabatic` takes the temperature of its mantle and core from this integration across the cut. In `adiabatic_from_cmb` the mantle starts at the CMB, so the cut changes only the temperature of the ice layer. On the planet of case C with a `PALEOS:H2O` layer, the cut raises the centre temperature by 1.9 to 7.0 K in every one of 6 pairs of solves with and without it; these solves are measured, not asserted (box below the table).
 
@@ -172,6 +172,8 @@ Measured once and not asserted: with a padded top, against a table with 4096 she
 ![Temperature difference from the cut DOP853 reference against pressure on the last adiabat of the solved case C planet with the `Seager2007:H2O` layer, with and without the cut](../assets/validation/adiabat_ice_planet_dark.svg#only-dark){ width="80%" }
 
 **How to read the plot.** The x-axis is the pressure in GPa at the 150 nodes of the solved case C planet with the `Seager2007:H2O` layer, and the vertical line is the mantle and ice boundary. The y-axis is the distance in K from the DOP853 reference with the cut, on a logarithmic scale; a node that meets the reference to round-off is drawn at $10^{-6}$ K, so in the ice both lines lie there. The solid line is the last adiabat of the solve, which the test bounds by 0.005 K. The dashed line is the reference without the cut: below the boundary it lies up to 0.72 K off. The test passes when the solid line stays below 0.005 K. The test makes this plot only with `--validation-plots`.
+
+The `PALEOS:H2O` test of case C draws no plot: it uses the reference and the bound of the `Seager2007:H2O` test, whose plot shows the cut; its measured values are in the table below.
 
 Measured values, macOS arm64:
 
@@ -190,8 +192,8 @@ Measured values, macOS arm64:
 | dropped node, top 4 segments | $P$ linear in $m$, relative | at most $9.4 \times 10^{-3}$ | 0.01 |
 | C, `Seager2007:H2O` | ice nodes from 300 K | to round-off | $10^{-9}$ K |
 | C, `Seager2007:H2O`, last adiabat of the solve | from the reference with the cut, without it | $1.6 \times 10^{-4}$ K, 0.72 K | 0.005 K, above 0.005 K |
-| C, `PALEOS:H2O` | top node from 300 K; ice nodes inward | to round-off; do not fall | $10^{-9}$ K; exact |
-| C, `PALEOS:H2O`, last adiabat of the solve | the same as `Seager2007:H2O` | $3.5 \times 10^{-4}$ K, 6.5 K | 0.005 K, above 0.005 K |
+| C, `PALEOS:H2O` | top node from 300 K; ice nodes inward | to round-off; do not fall, deepest above the top | $10^{-9}$ K; exact |
+| C, `PALEOS:H2O`, last adiabat of the solve | from the reference with the cut, without it | $3.5 \times 10^{-4}$ K, 6.5 K | 0.005 K, above 0.005 K |
 
 ??? info "Measured solves (not asserted by a test)"
     - Setup: the planet of case C with a `PALEOS:H2O` and with a `Seager2007:H2O` layer, at 150, 300 and 600 nodes and mass tolerances (`tolerance_outer`) of $10^{-3}$, the default, and $10^{-4}$: 6 pairs of solves with and without the cut for each EOS. The next 3 bullets give the `PALEOS:H2O` solves.

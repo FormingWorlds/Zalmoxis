@@ -107,7 +107,8 @@ When the CMB lies in the same segment, its cut also takes $P$ linear in $m$, so 
 A piece that ends on a node on the boundary takes the mixture of its middle, so an outward step into that node stays in the mantle.
 The T(P) table of the density solve gains the boundary as one more point, with the temperature of the adiabat there, so its lookup does not interpolate across the change of slope.
 
-A layer whose EOS has no temperature dependence, such as `Seager2007:H2O`, has no adiabatic gradient, so the integration holds one temperature over it: the temperature at its end nearer the anchor: the surface temperature with the surface anchor, the mantle temperature at the boundary with the CMB anchor.
+A layer whose EOS has no temperature dependence, such as `Seager2007:H2O`, has no adiabatic gradient.
+The integration holds one temperature over such a layer, the temperature at its end nearer the anchor: the surface temperature with the surface anchor, and the mantle temperature at the boundary with the CMB anchor.
 
 **Where this is checked.** [The adiabat across the mantle and ice boundary](../Validation/thermal_state.md#the-adiabat-across-the-mantle-and-ice-boundary).
 
