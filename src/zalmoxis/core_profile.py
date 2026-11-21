@@ -32,9 +32,11 @@ def icb_pressure(mass, pressure, icb_mass):
     ascending ``mass`` [kg], exact while the density is uniform from the centre to the outer
     node (a uniform sphere), not for a uniform shell above a denser centre. Every ICB
     reader and the adiabat cut take it on the core nodes and the CMB point of ``_cmb_point``
-    (ln P linear in m), so they share one pressure for one ICB mass; in the node segment of
-    the CMB it is as accurate as that point. ``core_arrays`` moves it to its CMB node where
-    it would lie below that node or the inner core is full."""
+    (ln P linear in m), so they share one pressure for one ICB mass, except where the ICB,
+    the CMB and an ice boundary lie in one node segment: there the adiabat takes the CMB point
+    with P linear in m. In the node segment of the CMB it is as accurate as that point.
+    ``core_arrays`` moves it to its CMB node where it would lie below that node or the inner
+    core is full."""
     return float(np.interp(icb_mass ** (2.0 / 3.0), np.asarray(mass) ** (2.0 / 3.0), pressure))
 
 
