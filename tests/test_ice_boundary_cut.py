@@ -14,6 +14,8 @@ from hypothesis import strategies as st
 
 from zalmoxis.eos.temperature import compute_adiabatic_temperature
 
+pytestmark = [pytest.mark.unit, pytest.mark.timeout(30)]
+
 M_E = 5.972e24
 N = 31
 
@@ -28,15 +30,16 @@ class _Layer:
         return self.nabla is not None
 
 
-@pytest.fixture
-def stub_nabla(monkeypatch):
-    """Route ``get_mixed_nabla_ad`` to the constant nabla of the layer it reads."""
+@pytest.fixture(scope='module', autouse=True)
+def _stub_nabla():
+    """Route ``get_mixed_nabla_ad`` to the constant nabla of the layer it reads (module scope,
+    which Hypothesis accepts)."""
     import zalmoxis.mixing as _mix
 
-    monkeypatch.setattr(
-        _mix, 'get_mixed_nabla_ad', lambda P, T, mixture, *a, **k: mixture.nabla
-    )
-    monkeypatch.setattr(_mix, 'any_component_is_tdep', lambda *a, **k: True)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(_mix, 'get_mixed_nabla_ad', lambda P, T, mixture, *a, **k: mixture.nabla)
+        mp.setattr(_mix, 'any_component_is_tdep', lambda *a, **k: True)
+        yield
 
 
 def _planet(k, f, p_top=2e5):
@@ -86,13 +89,12 @@ def _closed_form(P, m, cmm, anchor, ice, mantle=0.2):
     return T
 
 
-@pytest.mark.unit
 @pytest.mark.physics_invariant
 @pytest.mark.reference_pinned
 @pytest.mark.parametrize('anchor', ['surface', 'cmb'])
 @pytest.mark.parametrize('ice', [0.1, None], ids=['tdep_ice', 'inert_ice'])
 @pytest.mark.parametrize('k', [1, 2, 5, 20])
-def test_the_adiabat_follows_each_layer_across_the_ice_boundary(stub_nabla, anchor, ice, k):
+def test_the_adiabat_follows_each_layer_across_the_ice_boundary(anchor, ice, k):
     """Case A: the boundary in the middle of the k-th node segment from the top. Every node
     above the CMB node meets the piecewise power law to 1e-12 relative (mantle 0.2, ice 0.1 or
     T-independent; anchors 1000 K at the top and 3000 K at the CMB, so no node reaches a cap)."""
@@ -101,7 +103,6 @@ def test_the_adiabat_follows_each_layer_across_the_ice_boundary(stub_nabla, anch
     np.testing.assert_allclose(T[1:], _closed_form(P, m, cmm, anchor, ice)[1:], rtol=1e-12)
 
 
-@pytest.mark.unit
 @pytest.mark.physics_invariant
 @settings(max_examples=80, deadline=None)
 @given(
@@ -115,17 +116,11 @@ def test_the_cut_meets_the_closed_form_anywhere_in_a_segment(k, f, anchor, ice, 
     """The ice boundary at any fraction of any node segment above the CMB node, a boundary on a
     node included, both anchors: every node above the CMB node meets the closed form to 1e-12
     relative, with the boundary node in the layer of ``get_layer_mixture``."""
-    import zalmoxis.mixing as _mix
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(_mix, 'get_mixed_nabla_ad', lambda P, T, mixture, *a, **kw: mixture.nabla)
-        mp.setattr(_mix, 'any_component_is_tdep', lambda *a, **kw: True)
-        P, m, cmm = _planet(k, f, p_top)
-        T = _solve(P, m, cmm, anchor, ice)
+    P, m, cmm = _planet(k, f, p_top)
+    T = _solve(P, m, cmm, anchor, ice)
     np.testing.assert_allclose(T[1:], _closed_form(P, m, cmm, anchor, ice)[1:], rtol=1e-12)
 
 
-@pytest.mark.unit
 @settings(max_examples=60, deadline=None)
 @given(
     frac=st.one_of(st.floats(0.0, 1.0), st.sampled_from([0.0, 1.0])),
@@ -135,22 +130,16 @@ def test_the_cut_meets_the_closed_form_anywhere_in_a_segment(k, f, anchor, ice, 
 def test_a_two_layer_profile_ignores_core_mantle_mass(frac, anchor):
     """Without an ice layer the profile is bit-equal for every ``core_mantle_mass`` from the
     CMB mass to the planet mass (a 2-layer caller may pass a mantle mass fraction above 0)."""
-    import zalmoxis.mixing as _mix
-
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(_mix, 'get_mixed_nabla_ad', lambda P, T, mixture, *a, **kw: mixture.nabla)
-        mp.setattr(_mix, 'any_component_is_tdep', lambda *a, **kw: True)
-        P, m, _ = _planet(1, 0.5)
-        layers = {'core': _Layer(None), 'mantle': _Layer(0.2)}
-        cmb = 0.5 * m[1]
-        T = [
-            _solve(P, m, c, anchor, None, layer_mixtures=layers)
-            for c in (cmb, cmb + frac * (M_E - cmb))
-        ]
+    P, m, _ = _planet(1, 0.5)
+    layers = {'core': _Layer(None), 'mantle': _Layer(0.2)}
+    cmb = 0.5 * m[1]
+    T = [
+        _solve(P, m, c, anchor, None, layer_mixtures=layers)
+        for c in (cmb, cmb + frac * (M_E - cmb))
+    ]
     assert np.array_equal(T[0], T[1])
 
 
-@pytest.mark.unit
 @pytest.mark.physics_invariant
 @settings(max_examples=60, deadline=None)
 @given(
@@ -165,7 +154,6 @@ def test_a_thin_mantle_inside_one_segment_keeps_the_profile_monotone(eps, anchor
     for the CMB, the 2 cuts would swap for a mantle up to H/8 of the segment mass, H its ln P
     width)."""
     import zalmoxis.eos.temperature as _t
-    import zalmoxis.mixing as _mix
 
     pieces, step = [], _t._segment_temperature
 
@@ -174,8 +162,6 @@ def test_a_thin_mantle_inside_one_segment_keeps_the_profile_monotone(eps, anchor
         return step(T0, p_from, p_to, nabla_of, h, inward)
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(_mix, 'get_mixed_nabla_ad', lambda P, T, mixture, *a, **kw: mixture.nabla)
-        mp.setattr(_mix, 'any_component_is_tdep', lambda *a, **kw: True)
         mp.setattr(_t, '_segment_temperature', spy)
         P, m = np.geomspace(3.6e11, 2e5, N), np.linspace(0.0, M_E, N)
         cmb = m[5] + 0.3 * (m[6] - m[5])
@@ -190,7 +176,6 @@ def test_a_thin_mantle_inside_one_segment_keeps_the_profile_monotone(eps, anchor
             assert np.min(np.abs(ends / want - 1)) < 1e-12, (want, pieces)
 
 
-@pytest.mark.unit
 @pytest.mark.physics_invariant
 def test_a_t_independent_layer_must_hold_one_temperature():
     """``_check_profile`` raises when a layer without a T-dependent component changes T over the

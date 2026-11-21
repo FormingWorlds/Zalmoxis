@@ -149,16 +149,48 @@ def _ice_case(profiles, case, p_top, k, eos):
     P, m = np.array(kw['pressure'], float), np.asarray(kw['mass_enclosed'], float)
     if p_top is not None:
         P[-1] = p_top
-    n = P.size
     layers = dict(kw['layer_mixtures'], ice_layer=LayerMixture([eos], [1.0]))
-    cmm = 0.5 * (m[n - 1 - k] + m[n - k])
+    cmm = 0.5 * (m[-1 - k] + m[-k])
     return dict(kw, pressure=P, layer_mixtures=layers, core_mantle_mass=cmm)
+
+
+def _march(kw, x, T0, pieces):
+    """DOP853 march (rtol 1e-12, atol 1e-14 on ln T) of d ln T / d ln P = nabla from ``T0`` at
+    ``x[0]`` (ln P) over the ``pieces`` (x_a, x_b, mixture), each read at the ``x`` inside it; a
+    mixture without a T-dependent component holds T."""
+    from scipy.integrate import solve_ivp
+
+    from zalmoxis.mixing import get_mixed_nabla_ad
+
+    march, y0 = np.empty(x.size), math.log(T0)
+    for x_a, x_b, mx in pieces:
+        on = (x >= x_a) & (x <= x_b)
+        if not mx.has_tdep() or x_b <= x_a:
+            march[on] = math.exp(y0)
+            continue
+
+        def nab(x_, y, mx=mx):
+            return [get_mixed_nabla_ad(math.exp(x_), math.exp(y[0]), mx, *_eos(kw))]
+
+        sol = solve_ivp(
+            nab,
+            (x_a, x_b),
+            [y0],
+            'DOP853',
+            t_eval=x[on],
+            rtol=1e-12,
+            atol=1e-14,
+            dense_output=True,
+        )
+        march[on], y0 = np.exp(sol.y[0]), float(sol.sol(x_b)[0])
+    return march
 
 
 def _hydrostatic(kw):
     """``p_ice`` of ``_reference``: P [Pa] at the boundary mass b from dP/dm = -G m / (4 pi r^4)
     integrated inward from the outer node of the segment, r^3 linear in m between its nodes."""
-    G = 6.674e-11
+    from zalmoxis.constants import G
+
     m, r = np.asarray(kw['mass_enclosed'], float), np.asarray(kw['radii'], float)
 
     def p_at(lo, hi, b):
@@ -320,10 +352,7 @@ def test_the_lookup_follows_the_cut_inside_the_boundary_segment(profiles, case, 
     march cut at the same pressure (10 K for PALEOS H2O in the 2nd segment, where the ice
     piece is steep and curved: 8.75 K measured there; a lookup without the point misses by 2.4
     to 79 K at the boundary), and within 0.01 K at the inner node."""
-    from scipy.integrate import solve_ivp
-
     from zalmoxis.eos.temperature import compute_adiabatic_temperature as adiabat
-    from zalmoxis.mixing import get_mixed_nabla_ad
     from zalmoxis.solver import _adiabat_table, _shell_adiabat, _table_lookup
     from zalmoxis.structure_model import get_layer_mixture
 
@@ -342,28 +371,11 @@ def test_the_lookup_follows_the_cut_inside_the_boundary_segment(profiles, case, 
     lo, hi = P.size - 1 - k, P.size - k
     p_b = float(np.interp(cmm, (m[lo], m[hi]), (P[lo], P[hi])))
     x = np.linspace(math.log(P[hi]), math.log(P[lo]), 400)
-    march, y0 = np.empty(x.size), math.log(T[hi])
-    for x_a, x_b, mass in ((x[0], math.log(p_b), m[hi]), (math.log(p_b), x[-1], m[lo])):
-        on = (x >= x_a) & (x <= x_b)
-        mx = get_layer_mixture(mass, kw['cmb_mass'], cmm, kw['layer_mixtures'])
-        if not mx.has_tdep():
-            march[on] = math.exp(y0)
-            continue
-
-        def nab(x_, y, mx=mx):
-            return [get_mixed_nabla_ad(math.exp(x_), math.exp(y[0]), mx, *_eos(kw))]
-
-        sol = solve_ivp(
-            nab,
-            (x_a, x_b),
-            [y0],
-            'DOP853',
-            t_eval=x[on],
-            rtol=1e-12,
-            atol=1e-14,
-            dense_output=True,
-        )
-        march[on], y0 = np.exp(sol.y[0]), float(sol.sol(x_b)[0])
+    pieces = [
+        (x_a, x_b, get_layer_mixture(mass, kw['cmb_mass'], cmm, kw['layer_mixtures']))
+        for x_a, x_b, mass in ((x[0], math.log(p_b), m[hi]), (math.log(p_b), x[-1], m[lo]))
+    ]
+    march = _march(kw, x, T[hi], pieces)
     miss = float(np.max(np.abs([look(math.exp(v)) - w for v, w in zip(x, march)])))
     print(f'{case} seg {k} {eos}: lookup {miss:.3g} K from the march')
     assert miss < (10.0 if (k, eos) == (2, 'PALEOS:H2O') else 1.0), miss
@@ -458,10 +470,8 @@ def _top_cell(kw, p_top=None, layer_eos=None):
     cell (inner node inward, the node outside it outward from the CMB). A layer without a
     T-dependent EOS holds T, as the adiabat does. With ``layer_eos`` (an EOS name) a layer of
     it starts in the middle of the top cell. Returns a ``TopCell``."""
-    from scipy.integrate import solve_ivp
-
     from zalmoxis.eos.temperature import compute_adiabatic_temperature as adiabat
-    from zalmoxis.mixing import LayerMixture, get_mixed_nabla_ad
+    from zalmoxis.mixing import LayerMixture
     from zalmoxis.solver import _TOP_SHELL_POINTS, _adiabat_table, _shell_adiabat
     from zalmoxis.structure_model import get_layer_mixture
 
@@ -513,27 +523,7 @@ def _top_cell(kw, p_top=None, layer_eos=None):
         p_b = float(np.interp(kw['core_mantle_mass'], (m[inner], m[-1]), (P[inner], P[-1])))
         x_b = min(max(math.log(p_b), x[0]), x[-1])
         pieces = [(x[0], x_b, upper), (x_b, x[-1], lower)]
-    march, y0 = np.empty(x.size), math.log(T[-1])
-    for x_a, x_b, mx in pieces:
-        on = (x >= x_a) & (x <= x_b)
-        if not mx.has_tdep() or x_b <= x_a:
-            march[on] = math.exp(y0)
-            continue
-
-        def nab(x_, y, mx=mx):
-            return [get_mixed_nabla_ad(math.exp(x_), math.exp(y[0]), mx, *_eos(kw))]
-
-        sol = solve_ivp(
-            nab,
-            (x_a, x_b),
-            [y0],
-            'DOP853',
-            t_eval=x[on],
-            rtol=1e-12,
-            atol=1e-14,
-            dense_output=True,
-        )
-        march[on], y0 = np.exp(sol.y[0]), float(sol.sol(x_b)[0])
+    march = _march(kw, x, T[-1], pieces)
     return TopCell(x, look, march, *cell)
 
 
