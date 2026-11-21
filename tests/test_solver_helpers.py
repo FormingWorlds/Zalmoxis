@@ -248,7 +248,10 @@ def test_a_padded_cell_with_the_ice_boundary_warns(
     cfg = {'planet_mass': earth_mass, 'target_surface_pressure': 1e5, 'temperature_mode': mode}
     monkeypatch.setattr(zs, 'check_accepted', lambda *a, **k: None)
     caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
-    zs._check_accepted(res, {}, cfg, {}, None, mixes, None, asked)
+    try:
+        zs._check_accepted(res, {}, cfg, {}, None, mixes, None, asked)
+    except (KeyError, IndexError, TypeError) as e:  # a missing input must not raise
+        pytest.fail(f'raised {e!r}')
     assert 'surface stop' in caplog.text
     hit = 'lies in the padded top cell' in caplog.text
     assert hit is (warned is not None), caplog.text
