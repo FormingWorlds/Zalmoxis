@@ -2048,14 +2048,16 @@ def _analytic_ramp(
 
 
 @pytest.mark.smoke
+@pytest.mark.parametrize('ice', [0.0, 0.1], ids=['two_layer', 'ice_layer'])
 @pytest.mark.parametrize('mode', ['adiabatic', 'adiabatic_from_cmb'])
 def test_the_solve_gives_the_table_the_masses_and_the_direction_of_its_adiabat(
-    mode, monkeypatch
+    mode, ice, monkeypatch
 ):
     """_solve builds the T tables of a pass with the enclosed masses of the structure whose
     pressure it reads (the same pair of arrays as one structure integration returned), and
     marks the adiabat as integrated outward only in 'adiabatic_from_cmb', so the top shell takes
-    the mixture node of that adiabat; a 2-layer planet gives the table no ice boundary."""
+    the mixture node of that adiabat; the ice boundary goes to the table only with an ice layer
+    (Analytic:H2O, 0.1 of the mass)."""
     seen, real, made = [], zs._layer_tables, []
 
     def spy(pressure, T, mass, cmb_mass, top_shell, outward=False, boundary=None):
@@ -2068,10 +2070,19 @@ def test_the_solve_gives_the_table_the_masses_and_the_direction_of_its_adiabat(
         return m, g, P
 
     monkeypatch.setattr(zs, '_layer_tables', spy)
-    _analytic_ramp(structure=structure, temperature_mode=mode, max_iterations_outer=6)
+    layers = {'core': 'Analytic:iron', 'mantle': 'Analytic:MgSiO3'}
+    layers.update({'ice_layer': 'Analytic:H2O'} if ice else {})
+    _analytic_ramp(
+        structure=structure,
+        temperature_mode=mode,
+        max_iterations_outer=6,
+        mantle_mass_fraction=0.675 - ice if ice else 0,
+        layer_eos_config=layers,
+    )
     assert seen
+    want = (0.325 + (0.675 - ice)) * earth_mass if ice else None  # as _solve sums it
     for P, m, outward, boundary in seen:
-        assert outward is (mode == 'adiabatic_from_cmb') and boundary is None
+        assert outward is (mode == 'adiabatic_from_cmb') and boundary == want
         assert any(np.array_equal(m, mm) and np.array_equal(P, pp) for mm, pp in made)
 
 
