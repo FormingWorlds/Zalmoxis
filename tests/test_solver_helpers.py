@@ -15,8 +15,6 @@ Covers:
 
 from __future__ import annotations
 
-import logging
-
 import numpy as np
 import pytest
 
@@ -174,45 +172,6 @@ class TestTimeoutAcceptThreshold:
         assert 'threshold 3%' not in src
 
 
-class _SolveReached(Exception):
-    """Raised by the stub solve, so main stops after its checks."""
-
-
-@pytest.mark.parametrize(
-    ('ice', 'asked', 'fires'),
-    [(True, True, True), (False, True, False), (True, False, False)],
-    ids=['three_layers_adiabat', 'two_layers_adiabat', 'three_layers_no_adiabat'],
-)
-def test_main_warns_once_of_the_uncut_ice_boundary_on_an_adiabat(
-    monkeypatch, caplog, ice, asked, fires
-):
-    """A solve that integrates the adiabat itself with an ice layer logs 1 warning that the
-    boundary between the mantle and the ice layer is not cut, naming the known limit and its
-    docs page; a 2-layer planet or a solve without the adiabat logs none."""
-    from zalmoxis import solver
-
-    def stop(*a, **k):
-        raise _SolveReached
-
-    monkeypatch.setattr(solver, '_adiabat_asked', lambda *a, **k: asked)
-    monkeypatch.setattr(solver, '_solve', stop)
-    monkeypatch.setattr(solver, '_solve_newton_outer', stop)
-    eos = {'core': 'Seager2007:iron', 'mantle': 'Seager2007:MgSiO3'}
-    if ice:
-        eos['ice_layer'] = 'Seager2007:H2O'
-    cfg = {'layer_eos_config': eos, 'temperature_mode': 'adiabatic', 'planet_mass': 5.97e24}
-    with (
-        caplog.at_level(logging.WARNING, logger='fwl.zalmoxis.solver'),
-        pytest.raises(_SolveReached),
-    ):
-        solver.main(cfg, {}, None, '/tmp')
-    hits = [r for r in caplog.records if 'ice layer is not cut' in r.getMessage()]
-    assert len(hits) == (1 if fires else 0)
-    assert all(r.name == 'fwl.zalmoxis.solver' for r in hits)  # reaches the PROTEUS log
-    if fires:
-        assert 'adiabat_integration.md' in hits[0].getMessage()
-
-
 def test_the_layer_lags_split_the_nodes_by_the_core_rule():
     """_layer_lags gives the largest |T - adiabat| over the mantle and over the core nodes with
     P > 0. A node in the 1e-12 band below the CMB mass is a mantle node (``is_core``), as is a
@@ -229,3 +188,71 @@ def test_the_layer_lags_split_the_nodes_by_the_core_rule():
     T[0] = np.nan
     mantle, core = _layer_lags(T, adiabat, m, p, cmb)
     assert mantle == 16.0 and np.isnan(core)
+
+
+def _padded(cmm):
+    """An accepted result with 2 padded nodes (P = 0) above 4 nodes at P > 0."""
+    return {
+        'converged': True,
+        'padded': True,
+        'adiabat_computed': True,
+        'adiabat_blend': 1.0,
+        'adiabat_table_blend': 1.0,
+        'pressure': np.array([3e11, 1e11, 1e10, 1e8, 0.0, 0.0]),
+        'mass_enclosed': np.array([1e23, 2e24, 4e24, 5.9e24, 5.97e24, 5.97e24]),
+        'core_mantle_mass': cmm,
+    }
+
+
+_ICE, _CMB = {'ice_layer': None}, 'adiabatic_from_cmb'
+
+
+@pytest.mark.parametrize(
+    ('cmm', 'asked', 'mixes', 'mode', 'warned'),
+    [
+        (5.95e24, True, _ICE, 'adiabatic', 'every node below it'),
+        (5.95e24, True, _ICE, _CMB, 'only the padded node'),
+        (5.9e24, True, _ICE, 'adiabatic', None),
+        (5.0e24, True, _ICE, 'adiabatic', None),
+        (5.98e24, True, _ICE, 'adiabatic', None),
+        (5.95e24, False, _ICE, 'adiabatic', None),
+        (5.95e24, True, {'mantle': None}, 'adiabatic', None),
+        (None, True, _ICE, 'adiabatic', None),
+        ('no_p', True, _ICE, 'adiabatic', None),
+    ],
+    ids=[
+        'in_cell',
+        'from_cmb',
+        'at_node',
+        'below_cell',
+        'above_stop',
+        'no_adiabat',
+        'no_ice',
+        'no_cmm',
+        'no_positive_p',
+    ],
+)
+def test_a_padded_cell_with_the_ice_boundary_warns(
+    monkeypatch, caplog, cmm, asked, mixes, mode, warned
+):
+    """An accepted padded profile warns that its uncut top cell holds the ice boundary only on
+    an adiabat, with an ice layer, with the boundary between the outermost node with P > 0 and
+    the stop mass, and with the text of its anchor; a missing input gives no warning."""
+    from zalmoxis import solver as zs
+
+    res = _padded(5.95e24 if cmm == 'no_p' else cmm)
+    if cmm is None:
+        del res['core_mantle_mass']
+    if cmm == 'no_p':
+        res['pressure'] = np.zeros(6)
+    cfg = {'planet_mass': earth_mass, 'target_surface_pressure': 1e5, 'temperature_mode': mode}
+    monkeypatch.setattr(zs, 'check_accepted', lambda *a, **k: None)
+    caplog.set_level('WARNING', logger='fwl.zalmoxis.solver')
+    try:
+        zs._check_accepted(res, {}, cfg, {}, None, mixes, None, asked)
+    except (KeyError, IndexError, TypeError) as e:  # a missing input must not raise
+        pytest.fail(f'raised {e!r}')
+    assert 'surface stop' in caplog.text
+    hit = 'lies in the padded top cell' in caplog.text
+    assert hit is (warned is not None), caplog.text
+    assert warned is None or warned in caplog.text, caplog.text

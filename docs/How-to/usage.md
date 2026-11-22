@@ -48,6 +48,41 @@ python -m zalmoxis -c input/default.toml
 
 For the full list of parameters (EOS selection, temperature modes, solver settings, output options), see the [configuration reference](configuration.md).
 
+## A planet with an ice layer
+
+A third layer of water ice above the mantle needs 3 changes in a copy of `input/default.toml`:
+
+- a mantle mass fraction above 0; the ice layer takes the rest of the mass;
+- an EOS for the ice layer;
+- a surface temperature below 647 K, the critical point of H$_2$O. The configuration check refuses a hotter surface with an H$_2$O layer in every temperature mode but `isothermal`.
+
+```toml
+[AssumptionsAndInitialGuesses]
+core_mass_fraction   = 0.325
+mantle_mass_fraction = 0.575   # the ice layer takes the rest: 0.1 of the planet mass
+temperature_mode     = "adiabatic"
+surface_temperature  = 300
+
+[EOS]
+ice_layer            = "PALEOS:H2O"
+```
+
+Run it as before:
+
+```console
+python -m zalmoxis -c my_ice.toml
+```
+
+In `planet_profile.txt` of this run:
+
+- The last 18 of the 150 nodes lie in the ice layer, which starts at the enclosed mass $0.9 M$.
+- The temperature follows the H$_2$O adiabat from 300 K at the surface to 509 K at the deepest ice node, near 11.5 GPa.
+- The adiabat continues through the mantle and the core to 929 K at the centre.
+- With `ice_layer = "Seager2007:H2O"`, an EOS without temperature dependence, every ice node stays at 300 K.
+- The `Seager2007:H2O` run ends in a surface stop on macOS arm64: the rows past the stop hold zero pressure, and the solver logs the surface-stop warning. On another platform the same run can end with or without a surface stop, so check every run; [Check the surface pressure of a result](#check-the-surface-pressure-of-a-result) explains the check.
+
+[Layer boundaries inside a node segment](../Explanations/adiabat_integration.md#layer-boundaries-inside-a-node-segment) explains how the adiabat crosses the boundary between 2 nodes.
+
 ## Output files
 
 `python -m zalmoxis` writes all its files into its output folder: the existing folder that `[Output] output_dir` names, or else `output/` of the Zalmoxis root (created on the first run). The folder looks like:
@@ -91,7 +126,7 @@ The first row is the center (r = 0) and the last row is the surface. Rows beyond
 ### Check the surface pressure of a result
 
 `zalmoxis.solver.main()` returns a dict with the same profiles: `result['pressure'][-1]` is the pressure $P(R)$ at the outer radius, and the target is `target_surface_pressure` of the configuration.
-A profile whose integration stopped before the outer radius is padded: `result['padded']` is True and the rows past the stop hold zero pressure. When the solver accepts a padded profile, it logs one warning (`The accepted profile ends in a surface stop: ...`).
+A profile whose integration stopped before the outer radius is padded: `result['padded']` is True and the rows past the stop hold zero pressure. When the solver accepts a padded profile, it logs a warning (`The accepted profile ends in a surface stop: ...`); in an adiabatic temperature mode with the mantle and ice boundary in the padded top cell, it logs a second one, which names the nodes that miss the adiabat: every node below the cell with the surface anchor (`adiabatic`), only the padded node with the CMB anchor (`adiabatic_from_cmb`).
 The accept test passes a padded profile when the target is below `pressure_tolerance` ($10^9$ Pa by default), so read `padded` and compare $P(R)$ with the target before you use the surface values.
 [Padded accepts](../Explanations/process_flow.md#padded-accepts) explains when this happens, and the tutorial [Check that a structure meets its surface pressure](../Tutorials/surface_pressure.md) shows the check step by step.
 

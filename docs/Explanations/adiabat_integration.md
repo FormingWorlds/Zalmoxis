@@ -52,7 +52,7 @@ The checks therefore use 2 tests: the order on smooth $\nabla_\mathrm{ad}$ with 
 
 ## How the density solve reads the temperature over the top cell
 
-Between the top of the planet and the first node below it, the density solve reads the adiabat at 64 pressures, not a straight line between the 2 ends.
+Over the top cell the density solve reads the adiabat at 64 pressures, not a straight line between its 2 ends.
 
 The density solve reads $T$ from a table of this adiabat against $\log_{10} P$.
 The solve builds the table on the nodes of the previous outer pass ([Full-adiabat rule](process_flow.md#full-adiabat-rule)).
@@ -65,35 +65,50 @@ Its ends depend on the top:
 
 The solve adds 64 pressures over the cell to the table, evenly spaced in $\log P$: the shell.
 On the shell, the code integrates the adiabat inward from the temperature of the top node, for both anchors.
-The shell takes the mixture that the adiabat of the solve takes over the cell, because the adiabat gives each node its temperature with the mixture of that node:
-
-- **Surface anchor:** the mixture of the deeper node of the cell.
-- **CMB anchor:** the mixture of the next node outward from the deeper node, that is the top node or the first padded node.
+Over an unpadded cell each shell point takes its enclosed mass $m$ from $P$ linear in $m$ between the 2 ends, so the shell changes layer where the adiabat cuts the cell ([the ice boundary](#the-ice-boundary)).
+Over a padded cell, which the adiabat does not cut, the shell takes the mixture of the deeper node of the cell with the surface anchor and of the first padded node with the CMB anchor.
 
 On the stored profiles the cell spans 2 to 4 decades in pressure.
 A straight line in $\log_{10} P$ over it lies 9 to 14 K off on the 2 PROTEUS profiles and up to 28 K off on the default start with its top node near 1 bar; the lookup lies at most 0.083 K from an independent integration.
 
 **Where this is checked.** [Temperature lookup over the top cell](../Validation/thermal_state.md#temperature-lookup-over-the-top-cell).
 
-## Core boundaries inside a node segment
+## Layer boundaries inside a node segment
 
-What does the routine do when the inner-core boundary (ICB) or the core-mantle boundary (CMB) lies between 2 grid nodes?
+What does the routine do when the inner-core boundary (ICB), the core-mantle boundary (CMB) or the boundary between the mantle and an ice layer lies between 2 grid nodes?
 
-The routine walks away from the anchor: each node takes its temperature from its neighbour on the anchor side, by the integration over the node segment between the 2 nodes.
-When the ICB or the CMB lies inside a segment, the routine cuts the segment at the boundary and integrates each piece with the mixture of its own layer.
+Each node takes its temperature from the integration over the node segment from its neighbour on the anchor side.
+When a boundary lies inside a segment, the routine cuts the segment there and integrates each piece (between 2 cuts, or a cut and a node) with the mixture of its layer.
 The cut lies at the pressure of the boundary:
 
-- **CMB:** the pressure at the core mass, with $\ln P$ taken linear in the enclosed mass $m$ between the 2 nodes.
-- **ICB:** the pressure that the [inner-core boundary rule](mixing.md#the-inner-core-boundary) gives for the inner-core mass, with $P$ taken linear in $m^{2/3}$ between the core nodes on either side of it. When the ICB lies in the node segment of the CMB, the point of the CMB cut takes the place of the upper node ([the pressure at the inner-core boundary](mixing.md#the-pressure-at-the-inner-core-boundary)).
+- **CMB:** the pressure at the core mass, with $\ln P$ linear in the enclosed mass $m$ between the 2 nodes ($P$ linear in $m$ when the ice boundary shares the segment).
+- **Ice boundary:** the pressure at the core-plus-mantle mass, with $P$ linear in $m$ between the 2 nodes ([the ice boundary](#the-ice-boundary)).
+- **ICB:** the pressure that the [inner-core boundary rule](mixing.md#the-inner-core-boundary) gives for the inner-core mass, with $P$ taken linear in $m^{2/3}$ between the core nodes on either side of it. In the node segment of the CMB, the CMB point takes the place of the upper node ([the pressure at the inner-core boundary](mixing.md#the-pressure-at-the-inner-core-boundary)).
 
-So the cut and the ICB rule take one pressure for one inner-core mass.
+So the cut and the ICB rule take one pressure for one inner-core mass, unless the ICB, CMB and ice boundary share one segment.
 Other segments take the mixture of the node they fill.
 
-The cut matters where the gradients differ.
 At the ICB of a pure-iron core at 258 GPa and 5537 K (on the Anzellini curve), $\nabla_\mathrm{ad}$ of the default side tables is 0.22 on the solid side and 0.44 on the liquid side.
-Without the cut, the segment that holds the ICB would take one of the 2 values over its whole length, and the first inner-core node would miss the adiabat by up to 21 K.
+Without the cut, the segment would take one of the 2 values, and the first inner-core node would miss the adiabat by up to 21 K.
 
-**Where this is checked.** [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre) for the CMB, and [The adiabat across the ICB](../Validation/hydrostatic_structure.md#the-adiabat-across-the-icb) for the ICB.
+**Where this is checked.** [Temperature at the CMB and the centre](../Validation/thermal_state.md#temperature-at-the-cmb-and-the-centre) for the CMB and [The adiabat across the ICB](../Validation/hydrostatic_structure.md#the-adiabat-across-the-icb) for the ICB.
+
+### The ice boundary
+
+Why do the CMB and the ice boundary take different rules?
+In short: a top cell spans up to 4 decades in $P$, and there $\ln P$ linear in $m$ puts the boundary pressure far too low ([measured on a top cell](../Validation/thermal_state.md#the-adiabat-across-the-mantle-and-ice-boundary)); a segment at the CMB spans about 0.03 in $\ln P$, where the 2 rules agree.
+$P$ linear in $m$ gives equal pressure steps for equal mass steps, $\ln P$ linear in $m$ equal pressure factors.
+
+In hydrostatic equilibrium $\mathrm{d}P/\mathrm{d}m = -G m / (4 \pi r^4)$, and over one segment $m$ and $r$ change little, so $P$ is close to linear in $m$.
+
+With the CMB in the same segment, both cuts take $P$ linear in $m$, so they keep their order and the mantle between them keeps its piece.
+A piece that ends on a node on the boundary takes the mixture of its middle, so an outward step into that node stays in the mantle.
+The T(P) table of the density solve gains the boundary as one more point, with the temperature of the adiabat there, so its lookup does not interpolate across the change of slope.
+
+A layer whose EOS has no temperature dependence, such as `Seager2007:H2O`, has no adiabatic gradient.
+The integration holds one temperature over such a layer, the temperature at its end nearer the anchor: the surface temperature with the surface anchor, and the mantle temperature at the boundary with the CMB anchor.
+
+**Where this is checked.** [The adiabat across the mantle and ice boundary](../Validation/thermal_state.md#the-adiabat-across-the-mantle-and-ice-boundary).
 
 ## How the density solve reads the core temperature
 
@@ -126,21 +141,9 @@ So the strict accept test (the result key `accepted_on` is `'strict'`) accepts a
 ## Known limits of the integration
 
 - **Water below 1 bar.** A water layer, whose table reaches 0.1 Pa, is also isothermal below 1 bar.
-- **Boundary of a third layer inside a node segment.** The boundary between the mantle and an ice layer is not cut ([its size](#the-uncut-boundary-of-an-ice-layer)).
-- **Layer boundary inside the top cell.** The adiabat and the shell of the density table take one mixture over the top cell, so a layer boundary inside it is not resolved; the shell still ends at the temperature of the deeper node ([How the density solve reads the temperature over the top cell](#how-the-density-solve-reads-the-temperature-over-the-top-cell)).
+- **Layer boundary inside a padded top cell.** The adiabat does not cut a padded cell, and the shell takes one mixture over it ([How the density solve reads the temperature over the top cell](#how-the-density-solve-reads-the-temperature-over-the-top-cell)). An ice layer thinner than the top cell puts its boundary there: with the surface anchor every node below the cell is then off, with the CMB anchor only the padded node. The solver logs a warning ([the measured size](../Validation/thermal_state.md#the-adiabat-across-the-mantle-and-ice-boundary)).
+- **CMB and ice boundary in one segment.** With no mantle node, the CMB cut takes $P$ linear in $m$, which moves the centre by 0.011 K in one measured case ([known limits](../Validation/thermal_state.md#the-adiabat-across-the-mantle-and-ice-boundary)).
 - **Core at the iron melting curve.** Where the core adiabat meets the melting curve of the PALEOS iron table, the integration follows the $\nabla_\mathrm{ad}$ column into the solid branch, while a core at constant entropy would stay on the melting curve. For 4 solves of `input/default.toml` at 2515 K the integrated centre is 724 to 732 K colder than the path at the constant table entropy of the core top, known to about the 84 to 106 K spacing of the table nodes.
-
-### The uncut boundary of an ice layer
-
-The boundary between the mantle and an ice layer is not cut.
-Its node segment takes the mixture of the node it fills, so every node that the adiabat reaches after that segment misses the layering.
-A solve with an ice layer that integrates the adiabat itself logs a warning that names this limit.
-
-In the top cell, a cut also needs the shell of the density table to change mixture.
-With the nodes cut and the shell not cut, the shell misses the inner node of the cell by up to 3436 K (`PALEOS:H2O`, unpadded top).
-This value is a one-off measurement on the stored profiles of `tests/test_adiabat_real_profiles.py`; that test itself asserts only a miss above 1 K.
-
-[Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles) gives the size of this limit on the stored profiles.
 
 ## Ranges and checks of the inputs
 
@@ -151,10 +154,10 @@ This section lists what the routine and the config check refuse, and the check t
     - the surface temperature: a real number above 0 K and at most $10^5$ K;
     - with `anchor='cmb'`, the CMB temperature: from 100 K to $10^5$ K.
 
-    The config check `validate_config` refuses these values before a solve starts. In every temperature mode it refuses a surface temperature that is not a positive, finite number. In the modes `adiabatic` and `adiabatic_from_cmb` it also refuses a surface temperature above $10^5$ K, and in `adiabatic_from_cmb` a CMB temperature outside 100 K to $10^5$ K. `solver.main` does not call `validate_config`, and PROTEUS calls `solver.main` with its own configuration dict, so on that path the anchors are checked only when the solve computes the adiabat itself, at its first call of `compute_adiabatic_temperature`.
+    `validate_config` refuses the same values before a solve starts ([configuration](../How-to/configuration.md#assumptionsandinitialguesses)). `solver.main` does not call it, and PROTEUS calls `solver.main` with its own configuration dict, so on that path the anchors are checked at the first call of `compute_adiabatic_temperature`.
 
 - **Surface anchor below 100 K.** The routine accepts it, but the solver floors the temperature that the density reads from the adiabat at 100 K, so below 100 K the density uses 100 K.
-- **Check.** Each call raises `StructureInvariantError` when $T$ is not finite and positive at every node, or when it rises outward from the anchor.
+- **Check.** Each call raises `StructureInvariantError` when $T$ is not finite and positive at every node, rises outward from the anchor, or changes over a layer whose EOS has no temperature dependence.
 - **Range of `max_dlnp`.** A real number from $10^{-4}$ to 1; any other value raises `ValueError`.
 
 **Where this is checked.** [Adiabat integration on smooth gradients](../Validation/thermal_state.md#adiabat-integration-on-smooth-gradients), [Adiabat integration on real profiles](../Validation/thermal_state.md#adiabat-integration-on-real-profiles), [Temperature across 1 bar](../Validation/thermal_state.md#temperature-across-1-bar) and [Temperature lookup over the top cell](../Validation/thermal_state.md#temperature-lookup-over-the-top-cell). Unit tests check the anchor ranges and the caps: `tests/test_adiabatic.py::TestMidpointAdiabat::test_anchor_temperature_property_over_its_domain`, `::test_a_huge_nabla_stops_at_the_node_caps`, `::test_a_segment_stops_exactly_at_its_limit_property` and `::test_an_unknown_anchor_raises_value_error` for the routine, and `tests/test_config_validation.py::TestTemperatureValidation::test_anchor_temperature_property_over_its_domain` for the config check.

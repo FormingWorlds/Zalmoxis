@@ -411,30 +411,38 @@ def _layer_lags(T, adiabat, mass, pressure, cmb_mass):
     return tuple(float(lag[k].max()) if k.any() else None for k in (~core & up, core & up))
 
 
-def _layer_tables(pressure, T, mass, cmb_mass, top_shell, outward=False):
+def _layer_tables(pressure, T, mass, cmb_mass, top_shell, outward=False, boundary=None):
     """The T(P) table of the adiabat ``T`` on a pass (``_adiabat_table``) split at its CMB into
     the table of the mantle nodes and that of the core nodes (``is_core``), so that a query
     reads the adiabat of its own layer also where the CMB of the querying pass lies at another
     pressure. The core part is None when either layer holds fewer than 2 nodes; the mantle part
-    is then the table of all nodes."""
+    is then the table of all nodes. ``boundary`` is the ice boundary mass [kg] or None."""
     pressure, T, mass = (np.asarray(a, dtype=float) for a in (pressure, T, mass))
     in_core = is_core(mass, cmb_mass)
     core = in_core & (pressure > 0)
     if core.sum() < 2 or (~in_core).sum() < 2:
-        return _adiabat_table(pressure, T, mass, top_shell, outward), None
+        return _adiabat_table(pressure, T, mass, top_shell, outward, boundary), None
     s = np.argsort(pressure[core])
-    mantle = _adiabat_table(pressure[~in_core], T[~in_core], mass[~in_core], top_shell, outward)
+    mantle = _adiabat_table(
+        pressure[~in_core], T[~in_core], mass[~in_core], top_shell, outward, boundary
+    )
     return mantle, (np.log10(pressure[core][s]), T[core][s])
 
 
-def _adiabat_table(pressure, T, mass, top_shell, outward=False):
+def _adiabat_table(pressure, T, mass, top_shell, outward=False, boundary=None):
     """log10 P [Pa] and T [K] of the adiabat ``T`` on the nodes at P > 0, sorted by P: the T(P)
     lookup of the density solve. The top cell gains ``_TOP_SHELL_POINTS`` geometric pressures q
     [Pa] when its upper end lies more than 1e-9 (relative) above its lower end, with T
-    ``top_shell(q, T_top, m)``: the adiabat inward from T_top at q[0] at the enclosed mass
-    m [kg] of the node whose mixture the adiabat of the solve takes over the cell. That is the
-    deeper node of the cell for an adiabat integrated inward, and the node outside it (next in
-    the node order, along which P falls) for one integrated ``outward`` from the CMB.
+    ``top_shell(q, T_top, m)``: the adiabat inward from T_top at q[0] at the enclosed masses
+    m [kg] of the points. Over an unpadded cell m is linear in P between its 2 nodes, the rule
+    of the ice boundary of the adiabat, so the shell changes layer where the adiabat does. Over
+    a padded cell m is the mass of the node whose mixture the adiabat of the solve takes over
+    the cell: the deeper node for an adiabat integrated inward, and the node outside it (next
+    in the node order, along which P falls) for one integrated ``outward`` from the CMB. When an
+    unpadded cell holds the ice boundary mass ``boundary`` [kg], its pressure is one more
+    shell point, so the lookup does not interpolate across the change of slope there. A deeper
+    node segment that holds it gains the point at its pressure (P linear in m), with T from
+    ``top_shell`` stepped from the outer node of the segment.
 
     Padded top (P <= 0 at the outer node): the cell runs from ``ADIABAT_P_FLOOR`` to the lowest
     positive node, from the T of the padded node. Unpadded top: from the top node (from the
@@ -446,6 +454,13 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False):
     P, Ts = pressure[s][keep], T[s][keep]
     pad = pressure[-1] <= 0
     j = 0 if pad else 1  # the deeper node of the cell
+    ms = mass[s][keep]
+    k = [] if boundary is None else np.flatnonzero((ms[:-1] > boundary) & (ms[1:] < boundary))
+    if len(k) and k[0] >= j:  # the ice boundary inside a segment below the top cell
+        k = int(k[0])
+        p_b = np.interp(boundary, (ms[k + 1], ms[k]), (P[k + 1], P[k]))
+        t_b = top_shell(np.array([P[k], p_b]), Ts[k], np.array([ms[k], boundary]))[-1]
+        P, Ts = (np.insert(a, k + 1, v) for a, v in ((P, p_b), (Ts, t_b)))
     if P.size <= j:
         return np.log10(P), Ts
     lo = ADIABAT_P_FLOOR if pad else max(P[0], ADIABAT_P_FLOOR)
@@ -454,16 +469,20 @@ def _adiabat_table(pressure, T, mass, top_shell, outward=False):
         k = int(np.log10(P[0]) < np.log10(lo))  # a top node below the floor stays
         # min: a guard if P is not in node order
         node = min(s[keep][j] + int(outward), mass.size - 1)
-        shell = top_shell(q, T[-1] if pad else Ts[0], mass[node])
+        if not pad and boundary is not None:
+            p_b = np.interp(boundary, (ms[j], ms[0]), (P[j], P[0]))
+            q = np.union1d(q, p_b) if lo < p_b < P[j] else q
+        m_q = mass[node] if pad else np.interp(q, (P[0], P[j]), (ms[0], ms[j]))
+        shell = top_shell(q, T[-1] if pad else Ts[0], m_q)
         P, Ts = np.concatenate([P[:k], q, P[j:]]), np.concatenate([Ts[:k], shell, Ts[j:]])
     return np.log10(P), Ts
 
 
 def _shell_adiabat(adiabat, q, T_top, m):
     """T [K] at the shell pressures ``q`` [Pa], ascending from the top: ``adiabat(radii,
-    pressure, mass, top=T_top)`` inward from ``T_top`` at ``q[0]``, with every shell point at
-    the enclosed mass ``m`` [kg], so in one layer."""
-    return adiabat(np.arange(q.size), q[::-1], np.full(q.size, m), top=T_top)[::-1]
+    pressure, mass, top=T_top)`` inward from ``T_top`` at ``q[0]``, with the shell points at the
+    enclosed masses ``m`` [kg] (one value for all points, or one per point)."""
+    return adiabat(np.arange(q.size), q[::-1], np.full(q.size, m)[::-1], top=T_top)[::-1]
 
 
 def _inner_density_diff(density, old_density, pressure):
@@ -771,6 +790,19 @@ def _check_accepted(
             'of the target surface pressure %.4g Pa (padded).',
             config_params['target_surface_pressure'],
         )
+        p, m = (np.asarray(result.get(k, ())) for k in ('pressure', 'mass_enclosed'))
+        cmm = result.get('core_mantle_mass')
+        # an ice boundary between the outermost node with P > 0 and the stop mass is not cut
+        uncut = cmm is not None and (p > 0).any() and m[p > 0][-1] < cmm <= m[-1]
+        if adiabat_asked and 'ice_layer' in mixes and uncut:
+            logger.warning(
+                'The mantle and ice boundary lies in the padded top cell, which the adiabat '
+                'does not cut, so %s misses the adiabat of the cut boundary (known limit: '
+                'docs/Explanations/adiabat_integration.md, Known limits of the integration).',
+                'only the padded node'
+                if config_params.get('temperature_mode') == 'adiabatic_from_cmb'
+                else 'every node below it',
+            )
     return result
 
 
@@ -782,9 +814,10 @@ def _report_table_bands(
     A table counts at a mantle node when the solve read it there: the solid table at or
     below the solidus, below the liquidus, or where the melting curves are undefined; the
     melt table above the solidus; the gradient table at the start node of each segment the
-    adiabat integration stepped, when the solve computed the adiabat. Its midpoint substeps and
-    the read at 1e5 Pa of a segment whose start node lies below that pressure are between
-    nodes and are not checked. The check uses the final P and T, which are the values the
+    adiabat integration stepped, when the solve computed the adiabat. Its midpoint substeps,
+    the read at the cut pressure of a layer boundary inside a segment and the read at 1e5 Pa
+    of a segment whose start node lies below that pressure are between nodes and are not
+    checked. The check uses the final P and T, which are the values the
     adiabat integration read only once its blend reached 1. Only tables in
     the interpolation cache are checked. A node with a non-finite P or T counts as
     infinitely far outside. One warning names the tables with a node outside their band,
@@ -840,8 +873,11 @@ def _report_table_bands(
     T = np.asarray(result['temperature'], dtype=float)
     rtol = 1e-12  # the layer rule of structure_model.get_layer_mixture
     mantle = m >= result['cmb_mass'] * (1.0 - rtol)
+    ice = cut = np.zeros(len(P), bool)
     if 'ice_layer' in layer_mixtures:
-        mantle &= m < result['core_mantle_mass'] * (1.0 - rtol)
+        ice = m >= result['core_mantle_mass'] * (1.0 - rtol)
+        cut = m > result['core_mantle_mass']  # the adiabat cuts a segment that ends there
+        mantle &= ~ice
     sol, liq = melting_curves_functions or (lambda p: np.nan,) * 2
     t_sol, t_liq = np.full(len(P), np.nan), np.full(len(P), np.nan)
     t_sol[mantle] = [sol(p) for p in P[mantle]]
@@ -854,11 +890,13 @@ def _report_table_bands(
     if config_params.get('temperature_mode') == 'adiabatic_from_cmb':
         cmb = max(1, min(int(np.searchsorted(m, result['cmb_mass'])), len(P) - 1))
         step = (inner > ADIABAT_P_FLOOR) & (outer < np.inf)  # a NaN or inf end is not stepped
-        grad[:-1] = mantle[1:] & step & (np.arange(1, len(P)) > cmb)
-    else:  # the segment across the CMB also reads the mantle node above it
+        # the segment cut at the ice boundary reads its mantle node too
+        grad[:-1] = (mantle[1:] | (mantle[:-1] & ice[1:])) & step & (np.arange(1, len(P)) > cmb)
+    else:  # the segment across the CMB reads the mantle node above it; the one cut at the
+        # ice boundary starts its mantle piece there, not at the ice node above it
         core = m < result['cmb_mass'] * (1.0 - rtol)
         span = (inner >= ADIABAT_P_FLOOR) & (outer >= ADIABAT_P_FLOOR)
-        grad[1:] = (mantle[:-1] | (core[:-1] & mantle[1:])) & span
+        grad[1:] = ((mantle[:-1] & ~cut[1:]) | (core[:-1] & mantle[1:])) & span
     bad = mantle & ~(np.isfinite(P) & np.isfinite(T))
     reads = {
         'solid': mantle & (undefined | (T <= t_sol) | (T < t_liq)),
@@ -1104,13 +1142,6 @@ def main(
     asked = _adiabat_asked(
         config_params, layer_mixtures, temperature_function, temperature_arrays
     )
-    if asked and 'ice_layer' in config_params['layer_eos_config']:
-        logger.warning(
-            'The boundary between the mantle and the ice layer is not cut: the adiabat gives '
-            'its node segment the mixture of the node it fills, which moves the temperature of '
-            'the nodes below it (known limit: docs/Explanations/adiabat_integration.md, The '
-            'uncut boundary of an ice layer).'
-        )
     newton_keys, newton_time, seed_time, result = {}, 0.0, 0.0, None
     seed = (
         _adiabat_seed(adiabat_seed, config_params)
@@ -2555,6 +2586,7 @@ def _solve(
                         cmb_mass,
                         _top_shell,
                         temperature_mode == 'adiabatic_from_cmb',
+                        core_mantle_mass if 'ice_layer' in layer_mixtures else None,
                     )
                     f = _table_t(*mantle)
                     f.full = _adiabat_blend >= 1.0
