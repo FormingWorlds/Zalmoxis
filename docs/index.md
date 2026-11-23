@@ -23,7 +23,7 @@ Given a total mass, layer composition, and temperature mode, Zalmoxis iterativel
 - **First-principles verified**: 25 tests against exact analytical solutions (uniform/two-layer spheres, Gauss's law, hydrostatic balance, Earth benchmark, mass-radius scaling)
 
 !!! info "PROTEUS framework"
-    When used within PROTEUS, Zalmoxis is re-solved when one of its update triggers fires, and each re-solve refreshes the planetary radius, gravity profile, and density structure.
+    When used within PROTEUS, Zalmoxis is re-solved when one of its update triggers fires, to update the planetary radius, gravity profile, and density structure.
     For the practical TOML recipe (which `[interior_struct.zalmoxis]` flags matter, IC modes, equilibration, update triggers, and the `--deterministic` flag), see [Coupling to PROTEUS (how-to)](How-to/proteus_coupling.md).
     For the theory (per-iteration control flow, IC anchors, mesh handover, Newton vs Picard rationale, JAX path), see [Coupling to PROTEUS (theory)](Explanations/proteus_coupling.md).
     The PROTEUS-side documentation is at [proteus-framework.org/PROTEUS](https://proteus-framework.org/PROTEUS).

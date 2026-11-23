@@ -123,7 +123,7 @@ See [Equations of State](eos_physics.md) for detailed physics of each EOS family
   Above $\sim 50 \, M_{\oplus}$, the planet enters the gas-giant regime. The `Chabrier:H` EOS supports dissolved H$_2$ as a mixing component in the mantle, but Zalmoxis does not model a free H/He envelope as a separate structural layer.
 - **Pressure range:** The Seager et al. (2007) tabulated and analytic EOS are valid up to $P \sim 10^{16}$ Pa ($10^{10}$ GPa), which exceeds central pressures for all planets within the supported mass range.
   The WolfBower2018 tables are limited to ~1 TPa; out-of-bounds pressures are clamped to the table edge (see [EOS Physics > Wolf & Bower 2018](eos_physics.md#wolf-bower-2018-temperature-dependent-eos)).
-- **Temperature range of the Wolf & Bower (2018) tables only:** The $P$-$T$ tables cover 0 to 16500 K; the code raises a `ValueError` if the requested temperature falls outside this grid.
+- **Temperature range, Wolf & Bower (2018) tables only:** The $P$-$T$ tables cover 0 to 16500 K; the code raises a `ValueError` if the requested temperature falls outside this grid.
   Out-of-bounds *pressures* are clamped to the table edge (see above), but out-of-bounds *temperatures* are not.
   The Seager et al. (2007) EOS (both tabulated and analytic) is evaluated at a fixed 300 K and carries no temperature dependence.
 - **Composition:** Multi-material volume-additive mixing is supported within layers (see [Multi-material mixing](mixing.md)). Layer boundaries (inner core/outer core/mantle/ice) remain sharp. Non-condensed volatile components are smoothly suppressed to prevent unphysical density deflation.

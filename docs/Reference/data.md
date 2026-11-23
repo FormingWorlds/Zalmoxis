@@ -101,9 +101,9 @@ The analytic EOS additionally provides three materials (MgFeSiO3, graphite, SiC)
 
 The following curves serve as reference benchmarks for validating the Zalmoxis internal structure model under both rocky and water-rich configurations:
 
-* Earth-like rocky exoplanets, with a 32.5% Fe + 67.5% MgSiO3 composition, taken from the mass-radius curves on the [Zeng model page](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html), which names Zeng et al. (2019)[^cite-zeng2019] as their reference.
+* Earth-like rocky exoplanets, with a 32.5% Fe + 67.5% MgSiO3 composition, taken from the mass-radius curves on the [Zeng model page](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html), which cites Zeng et al. (2019)[^cite-zeng2019] for these curves.
 
-* Water exoplanets, with a 50% Earth-like rocky core (32.5% Fe + 67.5% MgSiO3) and 50% water by mass at 300 K and surface pressure of 1 mbar, from the same page.
+* Water exoplanets, from the same Zeng model page, with a 50% Earth-like rocky core (32.5% Fe + 67.5% MgSiO3) and 50% water by mass at 300 K and surface pressure of 1 mbar.
 
 [^cite-attia2026]: M. Attia, T. Lichtenberg, E. Jungová, M. Sastre, *[PALEOS: Multiphase equations of state and mass-radius relations for exoplanet interiors](https://doi.org/10.1051/0004-6361/202660790)*, Astronomy and Astrophysics, 713, A225, 2026. [SciX](https://scixplorer.org/abs/2026A%26A...713A.225A/abstract).
 [^cite-belonoshko2005]: A. B. Belonoshko, N. V. Skorodumova, A. Rosengren, R. Ahuja, B. Johansson, L. Burakovsky, D. L. Preston, *[High-pressure melting of MgSiO$_3$](https://doi.org/10.1103/PhysRevLett.94.195701)*, Physical Review Letters, 94, 195701, 2005. [SciX](https://scixplorer.org/abs/2005PhRvL..94s5701B/abstract).

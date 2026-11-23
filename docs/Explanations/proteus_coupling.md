@@ -19,7 +19,7 @@ run_interior(self.directories, self.config, self.hf_all,
 self.hf_row['Time']     += self.interior_o.dt
 self.hf_row['age_star'] += self.interior_o.dt
 
-# 3. Optional structure refresh (Zalmoxis, on triggers)
+# 3. Optional structure refresh (Zalmoxis, when a trigger fires)
 if (not self.init_stage
     and self.config.interior_struct.module == 'zalmoxis'
     and self.config.interior_struct.zalmoxis.update_interval > 0):
@@ -125,7 +125,7 @@ It reads the profiles and the convergence flags.
 On the JAX path with Aragog temperature arrays, `zalmoxis_solver` in `src/proteus/interior_struct/zalmoxis.py` rebuilds the density and temperature columns and evaluates a node with $P = 0$ at the target surface pressure; on the other paths a padded node keeps $P = 0$.
 Zalmoxis logs a warning when it returns a converged padded profile.
 
-The full set of TOML-derived inputs the wrapper translates is in `load_zalmoxis_configuration` (see `interior_struct/zalmoxis.py` lines ~420-564). Every TOML key from `[interior_struct]` and `[interior_struct.zalmoxis]` lands either in the Zalmoxis dict, in a derived helper (`mushy_zone_factors`, `_resolve_zalmoxis_temperature_mode`, `_resolve_zalmoxis_cmb_temperature`), or in a runtime condition (the JAX-disable path on init / equilibration calls depends on whether the caller supplied `temperature_arrays`).
+The full set of TOML-derived inputs the wrapper translates is in `load_zalmoxis_configuration` (see `interior_struct/zalmoxis.py` lines ~420-564). Every TOML key from `[interior_struct]` and `[interior_struct.zalmoxis]` lands either in the Zalmoxis dict, in a derived helper (`mushy_zone_factors`, `_resolve_zalmoxis_temperature_mode`, `_resolve_zalmoxis_cmb_temperature`), or in a runtime check (the JAX-disable path on init / equilibration calls depends on whether the caller supplied `temperature_arrays`).
 
 ## Initial-condition anchors
 

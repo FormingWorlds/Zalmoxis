@@ -348,7 +348,7 @@ The relative cost of the equilibration loop is small (typically 5-15 Zalmoxis ca
 ## Worked example: minimal copy-paste TOML excerpt
 
 Anchored on `input/chili/chili_paleos_v1_1_0_1me_150res.toml` (the 1 $M_\oplus$ PALEOS reference run).
-This excerpt covers only the blocks that a coupled Zalmoxis + Aragog run needs; merge it into a complete PROTEUS config with your own `[star]`, `[orbit]`, `[atmos_clim]`, `[outgas]`, `[escape]`, and `[params]` sections.
+This excerpt covers only the blocks that set up Zalmoxis and Aragog; merge it into a complete PROTEUS config with your own `[star]`, `[orbit]`, `[atmos_clim]`, `[outgas]`, `[escape]`, and `[params]` sections.
 
 ```toml
 [planet]

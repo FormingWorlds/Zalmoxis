@@ -169,7 +169,7 @@ Two implementations, both convergent on the same fixed point.
 
 ### Middle: density Picard
 
-Inside a fixed $R$, alternate between integrating the structure ODE (yielding $P(r)$) and re-evaluating $\rho(P, T)$ from the EOS. The trivial update is the damped fixed point $\rho_{k+1} = \alpha\,\rho_{\mathrm{EOS}}(P_k, T_k) + (1-\alpha)\,\rho_k$ with $\alpha = 0.5$. With `use_anderson = True`, `_anderson_mix` in `solver.py` accelerates by least-squares-combining the residual history (Walker & Ni (2011), Type-II form, default window $m_{\max} = 5$). On a singular Anderson matrix or non-finite output the helper returns `None` and the caller falls back to damped Picard for that step.
+Inside a fixed $R$, alternate between integrating the structure ODE (yielding $P(r)$) and re-evaluating $\rho(P, T)$ from the EOS. The trivial update is the damped fixed point $\rho_{k+1} = \alpha\,\rho_{\mathrm{EOS}}(P_k, T_k) + (1-\alpha)\,\rho_k$ with $\alpha = 0.5$. With `use_anderson = True`, `_anderson_mix` in `solver.py` accelerates by least-squares-combining the residual history, in the Type-II form of Walker & Ni (2011) with a default window $m_{\max} = 5$. On a singular Anderson matrix or non-finite output the helper returns `None` and the caller falls back to damped Picard for that step.
 
 ### Innermost: structure ODE
 
@@ -180,7 +180,7 @@ Inside a fixed $R$, alternate between integrating the structure ODE (yielding $P
 `compute_adiabatic_temperature` in `eos/temperature.py` supports two anchor points (`anchor='surface'` or `anchor='cmb'`).
 
 - **Surface-anchored** (default). Anchors $T(R) = T_{\mathrm{surf}}$ and integrates inward. This is the appropriate boundary condition when only the surface temperature is known.
-- **CMB-anchored** (energetics coupling). Anchors $T(r_{\mathrm{cmb}}) = T_{\mathrm{cmb}}$ at the first mantle shell and integrates outward through the mantle only; shells below the CMB carry the surface anchor through (the core adiabat is decoupled, and the energetics solver computes $T_{\mathrm{core}}$ from `core_heatcap` and the Bower et al. (2018)[^cite-bower2018] ratio). This is the path used when an interior energy budget already constrains $T_{\mathrm{cmb}}$, for example when Zalmoxis is downstream of Aragog or SPIDER.
+- **CMB-anchored** (energetics coupling). Anchors $T(r_{\mathrm{cmb}}) = T_{\mathrm{cmb}}$ at the first mantle shell and integrates outward through the mantle only; shells below the CMB carry the surface anchor through (the core adiabat is decoupled, and the energetics solver computes $T_{\mathrm{core}}$ from `core_heatcap` and the ratio of the mass-weighted core temperature to the CMB temperature from Bower et al. (2018)[^cite-bower2018]). This is the path used when an interior energy budget already constrains $T_{\mathrm{cmb}}$, for example when Zalmoxis is downstream of Aragog or SPIDER.
 
 Both anchors integrate with the same midpoint step in $\ln P$; [How the adiabat is integrated](adiabat_integration.md) describes the step, the 1 bar floor and the checks.
 
