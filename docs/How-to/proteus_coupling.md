@@ -55,7 +55,7 @@ Inside PROTEUS, the IC selection is governed by `[planet].temperature_mode`, **n
 | `"accretion"` | `adiabatic` (mapped) | White & Li accretion thermal state. Energetics computes its own T(r) post-structure. |
 | `"isothermal"`, `"linear"`, `"prescribed"` | unchanged | Diagnostics only. Not for production coupled runs. |
 
-For `liquidus_super`, set `[planet].delta_T_super` (default 500 K, validated `>= 0`). The `tsurf_init` and `tcenter_init` fields are ignored under `liquidus_super`: the adiabat is set by $T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ at the CMB and integrated upward. Before Zalmoxis has populated `hf_row['P_cmb']` on the first call, the wrapper estimates $P_\mathrm{cmb}$ from a Noack & Lasbleis (2020) mass-aware scaling so super-Earth runs anchor at the correct deep-mantle pressure rather than at an Earth-only value. After one round-trip the converged Zalmoxis $P_\mathrm{cmb}$ replaces the estimate.
+For `liquidus_super`, set `[planet].delta_T_super` (default 500 K, validated `>= 0`). The `tsurf_init` and `tcenter_init` fields are ignored under `liquidus_super`: the adiabat is set by $T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ at the CMB and integrated upward. Before Zalmoxis has populated `hf_row['P_cmb']` on the first call, the wrapper estimates $P_\mathrm{cmb}$ from a Noack & Lasbleis (2020)[^cite-noack2020] mass-aware scaling so super-Earth runs anchor at the correct deep-mantle pressure rather than at an Earth-only value. After one round-trip the converged Zalmoxis $P_\mathrm{cmb}$ replaces the estimate.
 
 ```toml
 [planet]
@@ -100,7 +100,7 @@ equilibrate_tol      = 0.01     # 1% tolerance on R_int and P_surf
 
 Disable only if you are debugging IC behavior. With it disabled, the first SPIDER/Aragog step uses an unequilibrated structure and the first ~10 iterations of the main loop spend wall time on what equilibration would have done in fewer Zalmoxis calls.
 
-See [the equilibration explainer](../Explanations/proteus_coupling.md#pre-main-loop-equilibration) for the rationale.
+See [the equilibration explainer](../Explanations/proteus_coupling.md#initial-condition-equilibration-loop) for the rationale.
 
 ---
 
@@ -188,7 +188,7 @@ nohup proteus start -c <cfg.toml> --offline --deterministic \
     > output/<run>/launch.log 2>&1 & disown
 ```
 
-Do not enable by default; it carries a small per-step cost. Use only when you observe noise-floor floating-point divergence between launches of the same config. Background and mechanism in the [Coupling explainer §determinism](../Explanations/proteus_coupling.md#determinism-and-the-deterministic-flag).
+Do not enable by default; it carries a small per-step cost. Use only when you observe noise-floor floating-point divergence between launches of the same config. Background and mechanism in the [Coupling explainer §determinism](../Explanations/proteus_coupling.md#determinism).
 
 ---
 
@@ -421,3 +421,5 @@ For the full reference (with `[params.dt]`, `[params.stop]`, atmosphere, escape,
 - **Equilibration warns "did not converge after 15 iterations".** Usually a sign that CALLIOPE is oscillating. Inspect $\Delta P/P$ trace; if it is dropping but slowly, raise `equilibrate_max_iter`. If it is non-monotonic, check the volatile inventory.
 
 For the why behind these, see the [Coupling to PROTEUS theory page](../Explanations/proteus_coupling.md).
+
+[^cite-noack2020]: L. Noack, M. Lasbleis, *[Parameterisations of interior properties of rocky planets. An investigation of planets with Earth-like compositions but variable iron content](https://doi.org/10.1051/0004-6361/202037723)*, Astronomy and Astrophysics, 638, A129, 2020. [SciX](https://scixplorer.org/abs/2020A%26A...638A.129N/abstract).

@@ -15,7 +15,7 @@ Given a total mass, layer composition, and temperature mode, Zalmoxis iterativel
 
 ## Features
 
-- **Multiple EOS families**: PALEOS unified tables ([Attia et al. (2026)](https://ui.adsabs.harvard.edu/abs/2026arXiv260503741A/abstract); iron, MgSiO$_3$, H$_2$O), Chabrier H$_2$ for sub-Neptune interiors, Wolf & Bower 2018, Seager 2007, and analytic polytropes
+- **Multiple EOS families**: PALEOS unified tables (Attia et al. (2026)[^cite-attia2026]; iron, MgSiO$_3$, H$_2$O), Chabrier H$_2$ for sub-Neptune interiors, Wolf & Bower (2018)[^cite-wolf2018], Seager et al. (2007)[^cite-seager2007], and analytic polytropes
 - **Multi-material mixing**: volume-additive harmonic mean with per-component phase-aware suppression
 - **H$_2$ miscibility**: binodal suppression models for H$_2$-silicate and H$_2$-H$_2$O phase boundaries
 - **Temperature modes**: adiabatic (self-consistent), isothermal, linear, or prescribed profiles
@@ -34,3 +34,7 @@ If you are running into problems, please do not hesitate to raise an [Issue](htt
 ## License
 
 See [the included license](https://github.com/FormingWorlds/Zalmoxis/blob/main/LICENSE.txt).
+
+[^cite-attia2026]: M. Attia, T. Lichtenberg, E. Jungová, M. Sastre, *[PALEOS: Multiphase equations of state and mass-radius relations for exoplanet interiors](https://doi.org/10.1051/0004-6361/202660790)*, Astronomy and Astrophysics, 713, A225, 2026. [SciX](https://scixplorer.org/abs/2026A%26A...713A.225A/abstract).
+[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-radius relationships for solid exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669, 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
+[^cite-wolf2018]: A. S. Wolf, D. J. Bower, *[An equation of state for high pressure-temperature liquids (RTpress) with application to MgSiO$_3$ melt](https://doi.org/10.1016/j.pepi.2018.02.004)*, Physics of the Earth and Planetary Interiors, 278, 59-74, 2018. [SciX](https://scixplorer.org/abs/2018PEPI..278...59W/abstract).

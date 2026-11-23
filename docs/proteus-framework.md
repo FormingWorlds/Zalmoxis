@@ -50,7 +50,7 @@ The two pages dedicated to PROTEUS coupling are:
 
 -   :material-book-open-variant: **Theory of the coupling**
 
-    Per-iteration control flow with diagram, the dict the wrapper passes to `zalmoxis.solver.main()`, the Fei+2021-anchored `liquidus_super` IC and the Noack & Lasbleis (2020) mass-aware super-Earth fallback, the `zalmoxis_output.dat` schema contract, volatile-profile $\phi(r)$ blending, the Newton outer-solver default, the JAX path subtleties.
+    Per-iteration control flow with diagram, the dict the wrapper passes to `zalmoxis.solver.main()`, the `liquidus_super` IC anchored on the Fei et al. (2021)[^cite-fei2021] liquidus and the Noack & Lasbleis (2020)[^cite-noack2020] mass-aware super-Earth fallback, the `zalmoxis_output.dat` schema contract, volatile-profile $\phi(r)$ blending, the Newton outer-solver default, the JAX path subtleties.
 
     [Go to the explainer](Explanations/proteus_coupling.md)
 
@@ -82,3 +82,6 @@ Zalmoxis is invoked from PROTEUS via:
 - `proteus/interior_energetics/wrapper.py`: hosts `equilibrate_initial_state()`, the pre-main-loop CALLIOPE + Zalmoxis convergence loop.
 
 These files live in the [PROTEUS repository](https://github.com/FormingWorlds/PROTEUS), not in Zalmoxis. Their per-symbol API documentation is rendered in the PROTEUS docs; this site documents the Zalmoxis side of the contract.
+
+[^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).
+[^cite-noack2020]: L. Noack, M. Lasbleis, *[Parameterisations of interior properties of rocky planets. An investigation of planets with Earth-like compositions but variable iron content](https://doi.org/10.1051/0004-6361/202037723)*, Astronomy and Astrophysics, 638, A129, 2020. [SciX](https://scixplorer.org/abs/2020A%26A...638A.129N/abstract).
