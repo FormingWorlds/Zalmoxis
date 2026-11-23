@@ -173,7 +173,7 @@ For the full physics, see the [binodal documentation](binodal.md).
 
 ### H$_2$-MgSiO$_3$ miscibility
 
-The H$_2$-MgSiO$_3$ binodal from Rogers, Young & Schlichting (2025)[^cite-rogers2025] defines the phase boundary between a miscible supercritical fluid (above) and immiscible gas + melt (below).
+The H$_2$-MgSiO$_3$ binodal from Rogers et al. (2025)[^cite-rogers2025] defines the phase boundary between a miscible supercritical fluid (above) and immiscible gas + melt (below).
 The binodal temperature varies with H$_2$ mole fraction and pressure:
 
 - At 1 GPa, the peak binodal temperature is ~4100 K (at the critical mole fraction $x_\mathrm{c} = 0.74$).
@@ -184,7 +184,7 @@ This model applies when `Chabrier:H` coexists with any MgSiO$_3$ EOS in the same
 
 ### H$_2$-H$_2$O miscibility
 
-The H$_2$-H$_2$O critical curve from Gupta, Stixrude & Schlichting (2025)[^cite-gupta2025] uses an asymmetric Margules Gibbs free energy model.
+The H$_2$-H$_2$O critical curve from Gupta et al. (2025)[^cite-gupta2025] uses an asymmetric Margules Gibbs free energy model.
 The critical temperature depends on pressure (via the interaction parameter $W(T, P)$).
 
 A floor of 647 K is imposed on the critical temperature.

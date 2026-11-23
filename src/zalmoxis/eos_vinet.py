@@ -24,9 +24,10 @@ References
 Boujibar, A., Driscoll, P. & Fei, Y. (2020). JGRP, 125, e2019JE006124.
 White, N. I. & Li, J. (2025). JGRP, 130, e2024JE008550.
 Smith, R. F. et al. (2018). Nature Astronomy, 2, 452-458.
-Fei, Y. et al. (2021). Phys. Rev. Lett., 127, 080501.
+Fei, Y. et al. (2021). Nat. Commun., 12, 876.
 Wicks, J. K. et al. (2018). Science Advances, 4, eaao5864.
-Sakai, T. et al. (2016). Geophys. Res. Lett., 43, 7648-7656.
+Sakai, T. et al. (2016). Sci. Rep., 6, 22652.
+Stixrude, L. & Lithgow-Bertelloni, C. (2005). Geophys. J. Int., 162, 610-632.
 """
 
 from __future__ import annotations

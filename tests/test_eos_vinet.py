@@ -10,7 +10,7 @@ Tests cover:
 
 References:
     Smith, R. F. et al. (2018). Nature Astronomy, 2, 452-458.
-    Fei, Y. et al. (2021). Phys. Rev. Lett., 127, 080501.
+    Fei, Y. et al. (2021). Nat. Commun., 12, 876.
     Boujibar, A. et al. (2020). JGRP, 125, e2019JE006124.
 """
 

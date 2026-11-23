@@ -235,11 +235,8 @@ def stixrude14_solidus(P):
 
 
 # ── PALEOS MgSiO3 melting curve (Belonoshko+05 / Fei+21) ─────────────
-#
-# Piecewise Simon-Glatzel fit used by the PALEOS unified EOS tables:
-# - P < P0: Belonoshko et al. (2005, PRB 72, 104107)
-# - P >= P0: Fei et al. (2021, PRL 127, 135701)
-# The crossover pressure P0 is determined numerically to ensure continuity.
+# Piecewise Simon-Glatzel fit of the PALEOS tables: Belonoshko et al. (2005, PRL 94, 195701)
+# Eq. 2 below P0, Fei et al. (2021, Nat. Commun. 12, 876) p. 5 above; P0 is set for continuity.
 
 _PALEOS_P0_GPA = 2.551686137257537  # GPa, crossover pressure
 
