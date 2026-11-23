@@ -149,7 +149,7 @@ def _gruneisen_adiabat_step(P_curr, P_next, T, gamma=1.3, K0=250e9, Kprime=4.0):
     It gives ~2-5 K/GPa for silicate mantle conditions.
 
     Default K0 = 250 GPa is a bulk lower-mantle average (perovskite
-    K0=261 GPa from Fei+2021, post-perovskite K0=324 GPa from
+    K0=261 GPa from Boujibar et al. (2020) Table 1, post-perovskite K0=324 GPa from
     Sakai+2016, weighted toward the dominant perovskite phase).
 
     Parameters
