@@ -90,7 +90,7 @@ In the PROTEUS ecosystem, mixing fractions are set by CALLIOPE (solubility model
 | `Seager2007:H2O` | Tabulated | Water ice (VII/VIII/X) | 300 K |
 | `WolfBower2018:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 7\,M_\oplus$) |
 | `RTPress100TPa:MgSiO3` | Tabulated | MgSiO$_3$ (solid + melt) | $T$-dependent ($\leq 50\,M_\oplus$) |
-| `Chabrier:H` | Chabrier+2019/2021 | Pure H$_2$ (molecular, atomic, ionized) | $T$-dependent, $\nabla_{\mathrm{ad}}$ |
+| `Chabrier:H` | Chabrier et al. (2019)[^cite-chabrier2019], Chabrier & Debras (2021)[^cite-chabrier2021] | Pure H$_2$ (molecular, atomic, ionized) | $T$-dependent, $\nabla_{\mathrm{ad}}$ |
 | `Analytic:<material>` | Analytic fit | Any of 6 materials | 300 K |
 
 See [Equations of State](eos_physics.md) for detailed physics of each EOS family.
@@ -123,11 +123,13 @@ See [Equations of State](eos_physics.md) for detailed physics of each EOS family
   Above $\sim 50 \, M_{\oplus}$, the planet enters the gas-giant regime. The `Chabrier:H` EOS supports dissolved H$_2$ as a mixing component in the mantle, but Zalmoxis does not model a free H/He envelope as a separate structural layer.
 - **Pressure range:** The Seager et al. (2007) tabulated and analytic EOS are valid up to $P \sim 10^{16}$ Pa ($10^{10}$ GPa), which exceeds central pressures for all planets within the supported mass range.
   The WolfBower2018 tables are limited to ~1 TPa; out-of-bounds pressures are clamped to the table edge (see [EOS Physics > Wolf & Bower 2018](eos_physics.md#wolf-bower-2018-temperature-dependent-eos)).
-- **Temperature range (Wolf & Bower 2018 only):** The $P$-$T$ tables cover 0 to 16500 K; the code raises a `ValueError` if the requested temperature falls outside this grid.
+- **Temperature range, Wolf & Bower (2018) tables only:** The $P$-$T$ tables cover 0 to 16500 K; the code raises a `ValueError` if the requested temperature falls outside this grid.
   Out-of-bounds *pressures* are clamped to the table edge (see above), but out-of-bounds *temperatures* are not.
   The Seager et al. (2007) EOS (both tabulated and analytic) is evaluated at a fixed 300 K and carries no temperature dependence.
 - **Composition:** Multi-material volume-additive mixing is supported within layers (see [Multi-material mixing](mixing.md)). Layer boundaries (inner core/outer core/mantle/ice) remain sharp. Non-condensed volatile components are smoothly suppressed to prevent unphysical density deflation.
 
-[^cite-attia2026]: M. Attia, T. Lichtenberg, E. Jungová, M. Sastre, *[PALEOS: Multiphase equations of state and mass-radius relations for exoplanet interiors](https://doi.org/10.1051/0004-6361/202660790)*, Astronomy & Astrophysics, 713, A225, 2026. [SciX](https://scixplorer.org/abs/2026A&A...713A.225A/abstract).
+[^cite-attia2026]: M. Attia, T. Lichtenberg, E. Jungová, M. Sastre, *[PALEOS: Multiphase equations of state and mass-radius relations for exoplanet interiors](https://doi.org/10.1051/0004-6361/202660790)*, Astronomy and Astrophysics, 713, A225, 2026. [SciX](https://scixplorer.org/abs/2026A%26A...713A.225A/abstract).
+[^cite-chabrier2019]: G. Chabrier, S. Mazevet, F. Soubiran, *[A new equation of state for dense hydrogen-helium mixtures](https://doi.org/10.3847/1538-4357/aaf99f)*, The Astrophysical Journal, 872, 51, 2019. [SciX](https://scixplorer.org/abs/2019ApJ...872...51C/abstract).
+[^cite-chabrier2021]: G. Chabrier, F. Debras, *[A new equation of state for dense hydrogen-helium mixtures. II. Taking into account hydrogen-helium interactions](https://doi.org/10.3847/1538-4357/abfc48)*, The Astrophysical Journal, 917, 4, 2021. [SciX](https://scixplorer.org/abs/2021ApJ...917....4C/abstract).
 [^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-radius relationships for solid exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669, 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
 [^cite-wolf2018]: A. S. Wolf, D. J. Bower, *[An equation of state for high pressure-temperature liquids (RTpress) with application to MgSiO$_3$ melt](https://doi.org/10.1016/j.pepi.2018.02.004)*, Physics of the Earth and Planetary Interiors, 278, 59-74, 2018. [SciX](https://scixplorer.org/abs/2018PEPI..278...59W/abstract).

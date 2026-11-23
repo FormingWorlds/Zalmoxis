@@ -690,8 +690,8 @@ pytest -o "addopts=" tests/test_first_principles.py tests/test_polytrope_verific
 
 Without `--validation-plots` the tests write nothing: each compares the data of its plot with the committed pair, and a missing or stale file fails the test.
 
-[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-Radius Relationships for Solid Exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669(2), 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
+[^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-radius relationships for solid exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669, 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
 [^cite-chandrasekhar1939]: S. Chandrasekhar, *An Introduction to the Study of Stellar Structure*, book (no DOI), Chicago, 1939. [SciX](https://scixplorer.org/abs/1939isss.book.....C/abstract).
-[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).
+[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of iron at Earth's inner core boundary based on fast X-ray diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).
 [^cite-labrosse2015]: S. Labrosse, *[Thermal evolution of the core with a high thermal conductivity](https://doi.org/10.1016/j.pepi.2015.02.002)*, Physics of the Earth and Planetary Interiors, 247, 36-55, 2015. [SciX](https://scixplorer.org/abs/2015PEPI..247...36L/abstract).
 [^cite-nimmo2015]: F. Nimmo, *[Energetics of the Core](https://doi.org/10.1016/B978-0-444-53802-4.00139-1)*, in Treatise on Geophysics, 2nd edition, vol. 8, 27-55, Elsevier, 2015.

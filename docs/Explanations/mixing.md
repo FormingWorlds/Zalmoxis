@@ -173,7 +173,7 @@ For the full physics, see the [binodal documentation](binodal.md).
 
 ### H$_2$-MgSiO$_3$ miscibility
 
-The H$_2$-MgSiO$_3$ binodal from Rogers, Young & Schlichting (2025)[^cite-rogers2025] defines the phase boundary between a miscible supercritical fluid (above) and immiscible gas + melt (below).
+The H$_2$-MgSiO$_3$ binodal from Rogers et al. (2025)[^cite-rogers2025] defines the phase boundary between a miscible supercritical fluid (above) and immiscible gas + melt (below).
 The binodal temperature varies with H$_2$ mole fraction and pressure:
 
 - At 1 GPa, the peak binodal temperature is ~4100 K (at the critical mole fraction $x_\mathrm{c} = 0.74$).
@@ -184,7 +184,7 @@ This model applies when `Chabrier:H` coexists with any MgSiO$_3$ EOS in the same
 
 ### H$_2$-H$_2$O miscibility
 
-The H$_2$-H$_2$O critical curve from Gupta, Stixrude & Schlichting (2025)[^cite-gupta2025] uses an asymmetric Margules Gibbs free energy model.
+The H$_2$-H$_2$O critical curve from Gupta et al. (2025)[^cite-gupta2025] uses an asymmetric Margules Gibbs free energy model.
 The critical temperature depends on pressure (via the interaction parameter $W(T, P)$).
 
 A floor of 647 K is imposed on the critical temperature.
@@ -431,14 +431,14 @@ The mixing framework supports several planned extensions without requiring chang
 [^cite-mashino2019]: I. Mashino, F. Miozzi, K. Hirose, G. Morard, R. Sinmyo, *[Melting experiments on the Fe-C binary system up to 255 GPa: Constraints on the carbon content in the Earth's core](https://doi.org/10.1016/j.epsl.2019.03.020)*, Earth and Planetary Science Letters, 515, 135-144, 2019. [SciX](https://scixplorer.org/abs/2019E%26PSL.515..135M/abstract).
 [^cite-mori2017]: Y. Mori, H. Ozawa, K. Hirose, R. Sinmyo, S. Tateno, G. Morard, Y. Ohishi, *[Melting experiments on Fe-Fe$_3$S system to 254 GPa](https://doi.org/10.1016/j.epsl.2017.02.021)*, Earth and Planetary Science Letters, 464, 135-141, 2017. [SciX](https://scixplorer.org/abs/2017E%26PSL.464..135M/abstract).
 [^cite-oka2019]: K. Oka, K. Hirose, S. Tagawa, Y. Kidokoro, Y. Nakajima, Y. Kuwayama, G. Morard, N. Coudurier, G. Fiquet, *[Melting in the Fe-FeO system to 204 GPa: Implications for oxygen in Earth's core](https://doi.org/10.2138/am-2019-7081)*, American Mineralogist, 104, 1603-1607, 2019. [SciX](https://scixplorer.org/abs/2019AmMin.104.1603O/abstract).
-[^cite-gupta2025]: A. Gupta, L. Stixrude, H. E. Schlichting, *[The Miscibility of Hydrogen and Water in Planetary Atmospheres and Interiors](https://doi.org/10.3847/2041-8213/adb631)*, The Astrophysical Journal Letters, 982(2), L35, 2025. [SciX](https://scixplorer.org/abs/2025ApJ...982L..35G/abstract).
+[^cite-gupta2025]: A. Gupta, L. Stixrude, H. E. Schlichting, *[The miscibility of hydrogen and water in planetary atmospheres and interiors](https://doi.org/10.3847/2041-8213/adb631)*, The Astrophysical Journal Letters, 982, L35, 2025. [SciX](https://scixplorer.org/abs/2025ApJ...982L..35G/abstract).
 [^cite-hirose2021]: K. Hirose, B. Wood, L. Vočadlo, *[Light elements in the Earth's core](https://doi.org/10.1038/s43017-021-00203-6)*, Nature Reviews Earth & Environment, 2, 645-658, 2021. [SciX](https://scixplorer.org/abs/2021NRvEE...2..645H/abstract).
 [^cite-kempton2023]: E. M.-R. Kempton, M. Lessard, M. Malik, L. A. Rogers, K. E. Futrowsky, J. Ih, N. Marounina, C. E. Romero-Mirza, *[Where are the Water Worlds?: Self-consistent Models of Water-rich Exoplanet Atmospheres](https://doi.org/10.3847/1538-4357/ace10d)*, The Astrophysical Journal, 953, 57, 2023. [SciX](https://scixplorer.org/abs/2023ApJ...953...57K/abstract).
 [^cite-li2019]: J. Li, B. Chen, M. Mookherjee, G. Morard, *[Carbon versus Other Light Elements in Earth's Core](https://doi.org/10.1017/9781108677950.003)*, in Deep Carbon, eds. B. N. Orcutt, I. Daniel, R. Dasgupta, Cambridge University Press, 40-65, 2019.
-[^cite-rogers2025]: J. G. Rogers, E. D. Young, H. E. Schlichting, *[Redefining interiors and envelopes: hydrogen-silicate miscibility and its consequences for the structure and evolution of sub-Neptunes](https://doi.org/10.1093/mnras/staf1940)*, Monthly Notices of the Royal Astronomical Society, 544(4), 3496-3511, 2025. [SciX](https://scixplorer.org/abs/2025MNRAS.544.3496R/abstract).
+[^cite-rogers2025]: J. G. Rogers, E. D. Young, H. E. Schlichting, *[Redefining interiors and envelopes: hydrogen-silicate miscibility and its consequences for the structure and evolution of sub-Neptunes](https://doi.org/10.1093/mnras/staf1940)*, Monthly Notices of the Royal Astronomical Society, 544, 3496-3511, 2025. [SciX](https://scixplorer.org/abs/2025MNRAS.544.3496R/abstract).
 [^cite-umemoto2020]: K. Umemoto, K. Hirose, *[Chemical compositions of the outer core examined by first principles calculations](https://doi.org/10.1016/j.epsl.2019.116009)*, Earth and Planetary Science Letters, 531, 116009, 2020. [SciX](https://scixplorer.org/abs/2020E%26PSL.53116009U/abstract).
 [^cite-tsutsumi2025]: Y. Tsutsumi, N. Sakamoto, K. Hirose, S. Mita, S. Yokoo, H. Hsu, H. Yurimoto, *[Origin of Earth's hydrogen and carbon constrained by their core-mantle partitioning and bulk Earth abundance](https://doi.org/10.1038/s41467-025-65729-5)*, Nature Communications, 16, 10038, 2025. [SciX](https://scixplorer.org/abs/2025NatCo..1610038T/abstract).
 [^cite-labrosse2015]: S. Labrosse, *[Thermal evolution of the core with a high thermal conductivity](https://doi.org/10.1016/j.pepi.2015.02.002)*, Physics of the Earth and Planetary Interiors, 247, 36-55, 2015. [SciX](https://scixplorer.org/abs/2015PEPI..247...36L/abstract).
 [^cite-nimmo2015]: F. Nimmo, *[Energetics of the Core](https://doi.org/10.1016/B978-0-444-53802-4.00139-1)*, in Treatise on Geophysics, 2nd edition, vol. 8, 27-55, Elsevier, 2015.
-[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).
+[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of iron at Earth's inner core boundary based on fast X-ray diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).
 [^cite-sinmyo2019]: R. Sinmyo, K. Hirose, Y. Ohishi, *[Melting curve of iron to 290 GPa determined in a resistance-heated diamond-anvil cell](https://doi.org/10.1016/j.epsl.2019.01.006)*, Earth and Planetary Science Letters, 510, 45-52, 2019. [SciX](https://scixplorer.org/abs/2019E%26PSL.510...45S/abstract).

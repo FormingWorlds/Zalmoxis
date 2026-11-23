@@ -49,11 +49,11 @@ For non-H$_2$ components, $\sigma_{\mathrm{binodal}} = 1$ always.
 
 ---
 
-## Rogers+2025: H$_2$-MgSiO$_3$ binodal
+## Rogers et al. (2025): H$_2$-MgSiO$_3$ binodal
 
 ### Source
 
-[Rogers, Young & Schlichting (2025)](https://doi.org/10.1093/mnras/staf1940), MNRAS 544, 3496. Analytic fit to the binodal temperature $T_\mathrm{b}(x_{\mathrm{H_2}}, P)$ from Eqs. A1-A11. Based on DFT-MD calculations of H$_2$-MgSiO$_3$ miscibility and asymmetric Margules parameters from [Gilmore & Stixrude (2026)](https://doi.org/10.1038/s41586-025-09970-4).
+Rogers et al. (2025)[^cite-rogers2025] give an analytic fit to the binodal temperature $T_\mathrm{b}(x_{\mathrm{H_2}}, P)$ in Eqs. A1-A11, based on DFT-MD calculations of H$_2$-MgSiO$_3$ miscibility and asymmetric Margules parameters from Gilmore & Stixrude (2026)[^cite-gilmore2026].
 
 ### Physics
 
@@ -64,7 +64,7 @@ The binodal defines the phase boundary in $(T, P, x_{\mathrm{H_2}})$ space betwe
 
 The binodal temperature is computed from two generalized logistic branches: an ascending branch (small $x_{\mathrm{H_2}}$, rising toward $T_\mathrm{c}$) and a descending branch (large $x_{\mathrm{H_2}}$, falling from $T_\mathrm{c}$). Their natural crossing occurs near the critical mole fraction $x_\mathrm{c} \approx 0.739$. The implementation evaluates both branches at every composition and takes the minimum, $T_\mathrm{b} = \min(T_{\mathrm{asc}}, T_{\mathrm{desc}})$, which produces a smooth peak without an artificial kink at $x_\mathrm{c}$.
 
-![Rogers+2025 binodal](../img/rogers2025_binodal.png)
+![Rogers et al. (2025) binodal](../img/rogers2025_binodal.png)
 
 Binodal temperature $T_\mathrm{b}$ as a function of H$_2$ mole fraction at seven pressures (0.5 to 30 GPa). The binodal drops with increasing pressure: at high P, H$_2$ and MgSiO$_3$ are compressed together and miscibility is easier. At P > 35 GPa, $T_\mathrm{c} < 0$ and the system is always miscible. The peak near $x_\mathrm{c} = 0.739$ (5.4% H$_2$ by mass) is the most difficult composition to mix.
 
@@ -96,11 +96,11 @@ The function `rogers2025_binodal_temperature(x_H2, P_GPa)` returns the binodal t
 
 ---
 
-## Gupta+2025: H$_2$-H$_2$O critical curve
+## Gupta et al. (2025): H$_2$-H$_2$O critical curve
 
 ### Source
 
-[Gupta, Stixrude & Schlichting (2025)](https://doi.org/10.3847/2041-8213/adb631), ApJL 982, L35. Gibbs free energy model with asymmetric Margules mixing parameters (Eqs. A2-A9, Table 1).
+Gupta et al. (2025)[^cite-gupta2025] give a Gibbs free energy model with asymmetric Margules mixing parameters (Eqs. A2-A9, Table 1).
 
 ### Physics
 
@@ -118,13 +118,13 @@ $$
 
 The critical pressure $P_\mathrm{c}(T)$ above which the system is always single-phase is given by Eq. A8. The critical temperature at a given pressure is obtained by inverting this relationship.
 
-![Gupta+2025 critical curve](../img/gupta2025_critical_curve.png)
+![Gupta et al. (2025) critical curve](../img/gupta2025_critical_curve.png)
 
 Critical temperature $T_\mathrm{c}(P)$ for the H$_2$-H$_2$O system. Below and to the right of the curve (shaded), the system separates into two immiscible phases. Above and to the left, it forms a single homogeneous fluid. The red dotted line marks the 647 K floor imposed by the H$_2$O critical point. Note the opposite pressure dependence compared to H$_2$-MgSiO$_3$: higher pressure makes H$_2$-H$_2$O mixing *harder*, because the positive volume of mixing favors phase separation under compression.
 
 ### The 647 K floor
 
-The Gupta+2025 Margules model is fitted to supercritical DFT-MD calculations and is valid only when both H$_2$ and H$_2$O are in supercritical or fluid states. Below 647 K (the critical temperature of pure H$_2$O), water condenses to liquid or ice. In this regime:
+The Gupta et al. (2025) Margules model is fitted to supercritical DFT-MD calculations and is valid only when both H$_2$ and H$_2$O are in supercritical or fluid states. Below 647 K (the critical temperature of pure H$_2$O), water condenses to liquid or ice. In this regime:
 
 - The Margules parameters ($W_V$ and $\lambda$ have $1/T^2$ and $1/T$ dependencies) extrapolate into physically meaningless territory.
 - H$_2$ and condensed H$_2$O are always immiscible, regardless of what the Margules model predicts.
@@ -164,6 +164,10 @@ For a sub-Neptune configuration example, see [configuration example 4](../How-to
 
 The binodal suppression has been validated against:
 
-- Reproduction of the Rogers+2025 Figure A1 binodal curve.
+- Reproduction of the Rogers et al. (2025) Figure A1 binodal curve.
 - Convergence of the structure solver for 5 $M_\oplus$ planets with 3% H$_2$ by mass in the mantle.
 - Correct behavior at limiting cases: pure endmembers ($x_{\mathrm{H_2}} = 0$ or $1$), high pressure (always miscible above 35 GPa for H$_2$-MgSiO$_3$), and low temperature (always immiscible below 647 K for H$_2$-H$_2$O).
+
+[^cite-gilmore2026]: T. Gilmore, L. Stixrude, *[Core-envelope miscibility in sub-Neptunes and super-Earths](https://doi.org/10.1038/s41586-025-09970-4)*, Nature, 650, 60-64, 2026. [SciX](https://scixplorer.org/abs/2026Natur.650...60G/abstract).
+[^cite-gupta2025]: A. Gupta, L. Stixrude, H. E. Schlichting, *[The miscibility of hydrogen and water in planetary atmospheres and interiors](https://doi.org/10.3847/2041-8213/adb631)*, The Astrophysical Journal Letters, 982, L35, 2025. [SciX](https://scixplorer.org/abs/2025ApJ...982L..35G/abstract).
+[^cite-rogers2025]: J. G. Rogers, E. D. Young, H. E. Schlichting, *[Redefining interiors and envelopes: hydrogen-silicate miscibility and its consequences for the structure and evolution of sub-Neptunes](https://doi.org/10.1093/mnras/staf1940)*, Monthly Notices of the Royal Astronomical Society, 544, 3496-3511, 2025. [SciX](https://scixplorer.org/abs/2025MNRAS.544.3496R/abstract).

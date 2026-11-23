@@ -15,7 +15,8 @@ Material parameters from:
     - Fe (solid): Smith et al. (2018), with 12.5% thermal+light-element
       density reduction following White & Li (2025).
     - Fe (liquid): Wicks et al. (2018), Fe-7Si alloy.
-    - MgSiO3 perovskite: Fei et al. (2021), via Boujibar et al. (2020).
+    - MgSiO3 perovskite: Fei et al. (2021); the Boujibar et al. (2020) Table 1
+      values are the entry ``MgSiO3_boujibar``.
     - MgSiO3 post-perovskite: Sakai et al. (2016).
     - Peridotite: Stixrude & Lithgow-Bertelloni (2005).
 
@@ -24,9 +25,10 @@ References
 Boujibar, A., Driscoll, P. & Fei, Y. (2020). JGRP, 125, e2019JE006124.
 White, N. I. & Li, J. (2025). JGRP, 130, e2024JE008550.
 Smith, R. F. et al. (2018). Nature Astronomy, 2, 452-458.
-Fei, Y. et al. (2021). Phys. Rev. Lett., 127, 080501.
+Fei, Y. et al. (2021). Nat. Commun., 12, 876.
 Wicks, J. K. et al. (2018). Science Advances, 4, eaao5864.
-Sakai, T. et al. (2016). Geophys. Res. Lett., 43, 7648-7656.
+Sakai, T. et al. (2016). Sci. Rep., 6, 22652.
+Stixrude, L. & Lithgow-Bertelloni, C. (2005). Geophys. J. Int., 162, 610-632.
 """
 
 from __future__ import annotations

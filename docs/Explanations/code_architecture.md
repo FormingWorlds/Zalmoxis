@@ -89,11 +89,11 @@ See [`zalmoxis.core_profile`](../Reference/api/zalmoxis.core_profile.md).
 
 #### `energetics.py`
 
-Computes gravitational binding energies (full integrand and the uniform-sphere reference $U = 3GM^2/5R$), the differentiation energy $U_d - U_u$, and the initial CMB temperature following White & Li (2025)[^cite-whiteli2025] Eq. 2: $T_{\mathrm{CMB}} = T_{\mathrm{eq}} + \Delta T_G + \Delta T_D + \Delta T_{\mathrm{ad}}$. Used by PROTEUS to seed a self-consistent post-accretion thermal state. See [`zalmoxis.energetics`](../Reference/api/zalmoxis.energetics.md).
+Computes gravitational binding energies (full integrand and the uniform-sphere reference $U = 3GM^2/5R$), the differentiation energy $U_d - U_u$, and the initial CMB temperature following White & Li (2025)[^cite-white2025] Eq. 2: $T_{\mathrm{CMB}} = T_{\mathrm{eq}} + \Delta T_G + \Delta T_D + \Delta T_{\mathrm{ad}}$. Used by PROTEUS to seed a self-consistent post-accretion thermal state. See [`zalmoxis.energetics`](../Reference/api/zalmoxis.energetics.md).
 
 #### `mixing.py`
 
-`LayerMixture` (a frozen dataclass of EOS components and their mass fractions) plus the multi-component closure: per-component densities are computed independently, weighted by mass fraction, and combined via harmonic mean (volume-additive). Two physical suppression mechanisms run on top: a per-component sigmoid that suppresses light volatile components below their critical density (auto-overrides `Chabrier:H` to a centre of 30 kg/m$^3$ and `PALEOS:H2O` to 322 kg/m$^3$), and a binodal weight from `binodal.py` that suppresses miscible H$_2$ above the Rogers+2025 / Gupta+2025 binodal temperature. See [`zalmoxis.mixing`](../Reference/api/zalmoxis.mixing.md).
+`LayerMixture` (a frozen dataclass of EOS components and their mass fractions) plus the multi-component closure: per-component densities are computed independently, weighted by mass fraction, and combined via harmonic mean (volume-additive). Two physical suppression mechanisms run on top: a per-component sigmoid that suppresses light volatile components below their critical density (auto-overrides `Chabrier:H` to a centre of 30 kg/m$^3$ and `PALEOS:H2O` to 322 kg/m$^3$), and a binodal weight from `binodal.py` that suppresses immiscible H$_2$ below the Rogers et al. (2025)[^cite-rogers2025] / Gupta et al. (2025)[^cite-gupta2025] binodal temperature. See [`zalmoxis.mixing`](../Reference/api/zalmoxis.mixing.md).
 
 #### `binodal.py`
 
@@ -113,7 +113,7 @@ The `EOS_REGISTRY` dict. Wrapped in `_LazyRegistry` so that file paths under `$Z
 
 #### `eos_vinet.py`
 
-Rose-Vinet EOS, $P(f) = 3 K_0 f^{-2}(1 - f)\exp[\eta(1 - f)]$ with $\eta = \tfrac{3}{2}(K_0' - 1)$, inverted to $\rho(P)$ by Brent root-finding. Material parameters from Smith+2018, Wicks+2018, Fei+2021, Sakai+2016, Stixrude & Lithgow-Bertelloni 2005. See [`zalmoxis.eos_vinet`](../Reference/api/zalmoxis.eos_vinet.md).
+Rose-Vinet EOS, $P(f) = 3 K_0 f^{-2}(1 - f)\exp[\eta(1 - f)]$ with $\eta = \tfrac{3}{2}(K_0' - 1)$, inverted to $\rho(P)$ by Brent root-finding. Material parameters from Smith et al. (2018)[^cite-smith2018], Wicks et al. (2018)[^cite-wicks2018], Fei et al. (2021)[^cite-fei2021], Sakai et al. (2016)[^cite-sakai2016] and Stixrude & Lithgow-Bertelloni (2005)[^cite-stixrude2005]. See [`zalmoxis.eos_vinet`](../Reference/api/zalmoxis.eos_vinet.md).
 
 #### `eos_export.py`
 
@@ -169,7 +169,7 @@ Two implementations, both convergent on the same fixed point.
 
 ### Middle: density Picard
 
-Inside a fixed $R$, alternate between integrating the structure ODE (yielding $P(r)$) and re-evaluating $\rho(P, T)$ from the EOS. The trivial update is the damped fixed point $\rho_{k+1} = \alpha\,\rho_{\mathrm{EOS}}(P_k, T_k) + (1-\alpha)\,\rho_k$ with $\alpha = 0.5$. With `use_anderson = True`, `_anderson_mix` in `solver.py` accelerates by least-squares-combining the residual history (Walker & Ni 2011, Type-II form, default window $m_{\max} = 5$). On a singular Anderson matrix or non-finite output the helper returns `None` and the caller falls back to damped Picard for that step.
+Inside a fixed $R$, alternate between integrating the structure ODE (yielding $P(r)$) and re-evaluating $\rho(P, T)$ from the EOS. The trivial update is the damped fixed point $\rho_{k+1} = \alpha\,\rho_{\mathrm{EOS}}(P_k, T_k) + (1-\alpha)\,\rho_k$ with $\alpha = 0.5$. With `use_anderson = True`, `_anderson_mix` in `solver.py` accelerates by least-squares-combining the residual history, in the Type-II form of Walker & Ni (2011) with a default window $m_{\max} = 5$. On a singular Anderson matrix or non-finite output the helper returns `None` and the caller falls back to damped Picard for that step.
 
 ### Innermost: structure ODE
 
@@ -180,7 +180,7 @@ Inside a fixed $R$, alternate between integrating the structure ODE (yielding $P
 `compute_adiabatic_temperature` in `eos/temperature.py` supports two anchor points (`anchor='surface'` or `anchor='cmb'`).
 
 - **Surface-anchored** (default). Anchors $T(R) = T_{\mathrm{surf}}$ and integrates inward. This is the appropriate boundary condition when only the surface temperature is known.
-- **CMB-anchored** (energetics coupling). Anchors $T(r_{\mathrm{cmb}}) = T_{\mathrm{cmb}}$ at the first mantle shell and integrates outward through the mantle only; shells below the CMB carry the surface anchor through (the core adiabat is decoupled, and the energetics solver computes $T_{\mathrm{core}}$ from `core_heatcap` and the Bower+2018 ratio). This is the path used when an interior energy budget already constrains $T_{\mathrm{cmb}}$, for example when Zalmoxis is downstream of Aragog or SPIDER.
+- **CMB-anchored** (energetics coupling). Anchors $T(r_{\mathrm{cmb}}) = T_{\mathrm{cmb}}$ at the first mantle shell and integrates outward through the mantle only; shells below the CMB carry the surface anchor through (the core adiabat is decoupled, and the energetics solver computes $T_{\mathrm{core}}$ from `core_heatcap` and the ratio of the mass-weighted core temperature to the CMB temperature from Bower et al. (2018)[^cite-bower2018]). This is the path used when an interior energy budget already constrains $T_{\mathrm{cmb}}$, for example when Zalmoxis is downstream of Aragog or SPIDER.
 
 Both anchors integrate with the same midpoint step in $\ln P$; [How the adiabat is integrated](adiabat_integration.md) describes the step, the 1 bar floor and the checks.
 
@@ -232,8 +232,14 @@ Zalmoxis only ever produces a snapshot. The coupling layer in PROTEUS (`proteus/
 - [EOS physics](eos_physics.md): what each EOS family actually computes and where its tables come from.
 - [Process flow](process_flow.md): the exact sequence of calls from `python -m zalmoxis` through to file output.
 
-[^cite-gupta2025]: A. Gupta, L. Stixrude, H. E. Schlichting, *[The Miscibility of Hydrogen and Water in Planetary Atmospheres and Interiors](https://doi.org/10.3847/2041-8213/adb631)*, The Astrophysical Journal Letters, 982(2), L35, 2025. [SciX](https://scixplorer.org/abs/2025ApJ...982L..35G/abstract).
-[^cite-rogers2025]: J. G. Rogers, E. D. Young, H. E. Schlichting, *[Redefining interiors and envelopes: hydrogen-silicate miscibility and its consequences for the structure and evolution of sub-Neptunes](https://doi.org/10.1093/mnras/staf1940)*, Monthly Notices of the Royal Astronomical Society, 544(4), 3496-3511, 2025. [SciX](https://scixplorer.org/abs/2025MNRAS.544.3496R/abstract).
+[^cite-bower2018]: D. J. Bower, P. Sanan, A. S. Wolf, *[Numerical solution of a non-linear conservation law applicable to the interior dynamics of partially molten planets](https://doi.org/10.1016/j.pepi.2017.11.004)*, Physics of the Earth and Planetary Interiors, 274, 49-62, 2018. [SciX](https://scixplorer.org/abs/2018PEPI..274...49B/abstract).
+[^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).
+[^cite-gupta2025]: A. Gupta, L. Stixrude, H. E. Schlichting, *[The miscibility of hydrogen and water in planetary atmospheres and interiors](https://doi.org/10.3847/2041-8213/adb631)*, The Astrophysical Journal Letters, 982, L35, 2025. [SciX](https://scixplorer.org/abs/2025ApJ...982L..35G/abstract).
+[^cite-rogers2025]: J. G. Rogers, E. D. Young, H. E. Schlichting, *[Redefining interiors and envelopes: hydrogen-silicate miscibility and its consequences for the structure and evolution of sub-Neptunes](https://doi.org/10.1093/mnras/staf1940)*, Monthly Notices of the Royal Astronomical Society, 544, 3496-3511, 2025. [SciX](https://scixplorer.org/abs/2025MNRAS.544.3496R/abstract).
+[^cite-sakai2016]: T. Sakai, H. Dekura, N. Hirao, *[Experimental and theoretical thermal equations of state of MgSiO$_3$ post-perovskite at multi-megabar pressures](https://doi.org/10.1038/srep22652)*, Scientific Reports, 6, 22652, 2016. [SciX](https://scixplorer.org/abs/2016NatSR...622652S/abstract).
 [^cite-seager2007]: S. Seager, M. Kuchner, C. A. Hier-Majumder, B. Militzer, *[Mass-radius relationships for solid exoplanets](https://doi.org/10.1086/521346)*, The Astrophysical Journal, 669, 1279-1297, 2007. [SciX](https://scixplorer.org/abs/2007ApJ...669.1279S/abstract).
-[^cite-walker2011]: H. F. Walker, P. Ni, *[Anderson acceleration for fixed-point iterations](https://doi.org/10.1137/10078356X)*, SIAM Journal on Numerical Analysis, 49(4), 1715-1735, 2011.
-[^cite-whiteli2025]: N. I. White, J. Li, *[Initial thermal states of super-Earth exoplanets and implications for early dynamos](https://doi.org/10.1029/2024JE008550)*, Journal of Geophysical Research: Planets, 130, e2024JE008550, 2025. [SciX](https://scixplorer.org/abs/2025JGRE..13008550W/abstract).
+[^cite-smith2018]: R. F. Smith, D. E. Fratanduono, D. G. Braun, T. S. Duffy, J. K. Wicks, P. M. Celliers, S. J. Ali, A. Fernandez-Pañella, R. G. Kraus, D. C. Swift, G. W. Collins, J. H. Eggert, *[Equation of state of iron under core conditions of large rocky exoplanets](https://doi.org/10.1038/s41550-018-0437-9)*, Nature Astronomy, 2, 452-458, 2018. [SciX](https://scixplorer.org/abs/2018NatAs...2..452S/abstract).
+[^cite-stixrude2005]: L. Stixrude, C. Lithgow-Bertelloni, *[Thermodynamics of mantle minerals - I. Physical properties](https://doi.org/10.1111/j.1365-246X.2005.02642.x)*, Geophysical Journal International, 162, 610-632, 2005. [SciX](https://scixplorer.org/abs/2005GeoJI.162..610S/abstract).
+[^cite-walker2011]: H. F. Walker, P. Ni, *[Anderson acceleration for fixed-point iterations](https://doi.org/10.1137/10078356X)*, SIAM Journal on Numerical Analysis, 49, 1715-1735, 2011.
+[^cite-white2025]: N. I. White, J. Li, *[Initial thermal states of super-Earth exoplanets and implications for early dynamos](https://doi.org/10.1029/2024JE008550)*, Journal of Geophysical Research: Planets, 130, e2024JE008550, 2025. [SciX](https://scixplorer.org/abs/2025JGRE..13008550W/abstract).
+[^cite-wicks2018]: J. K. Wicks, R. F. Smith, D. E. Fratanduono, F. Coppari, R. G. Kraus, M. G. Newman, J. R. Rygg, J. H. Eggert, T. S. Duffy, *[Crystal structure and equation of state of Fe-Si alloys at super-Earth core conditions](https://doi.org/10.1126/sciadv.aao5864)*, Science Advances, 4, eaao5864, 2018. [SciX](https://scixplorer.org/abs/2018SciA....4.5864W/abstract).

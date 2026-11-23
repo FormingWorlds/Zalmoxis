@@ -49,19 +49,19 @@ Inside PROTEUS, the IC selection is governed by `[planet].temperature_mode`, **n
 | `[planet].temperature_mode` | Zalmoxis structure-solve mode | When to use |
 |---|---|---|
 | `"adiabatic_from_cmb"` | `adiabatic_from_cmb` (CMB-anchored) | Default. Integrates the adiabat upward from `tcmb_init` at the converged $R_\mathrm{cmb}$. |
-| `"liquidus_super"` | `adiabatic_from_cmb` (CMB-anchored, $T_\mathrm{cmb}$ from liquidus) | Recommended for hot magma-ocean ICs. Anchors $T_\mathrm{cmb} = T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ from the Fei+2021 liquidus. |
+| `"liquidus_super"` | `adiabatic_from_cmb` (CMB-anchored, $T_\mathrm{cmb}$ from liquidus) | Recommended for hot magma-ocean ICs. Anchors $T_\mathrm{cmb} = T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ from the Fei et al. (2021)[^cite-fei2021] liquidus. |
 | `"adiabatic"` | `adiabatic` (surface-anchored) | Surface-anchored adiabat. Pairs with `[planet].tsurf_init` and `[planet].tcenter_init`. |
 | `"isentropic"` | `adiabatic` (mapped) | Energetics consumes `ini_entropy`; Zalmoxis T-profile is used only for the structure solve. |
-| `"accretion"` | `adiabatic` (mapped) | White & Li accretion thermal state. Energetics computes its own T(r) post-structure. |
+| `"accretion"` | `adiabatic` (mapped) | White & Li (2025)[^cite-white2025] accretion thermal state. Energetics computes its own T(r) post-structure. |
 | `"isothermal"`, `"linear"`, `"prescribed"` | unchanged | Diagnostics only. Not for production coupled runs. |
 
-For `liquidus_super`, set `[planet].delta_T_super` (default 500 K, validated `>= 0`). The `tsurf_init` and `tcenter_init` fields are ignored under `liquidus_super`: the adiabat is set by $T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ at the CMB and integrated upward. Before Zalmoxis has populated `hf_row['P_cmb']` on the first call, the wrapper estimates $P_\mathrm{cmb}$ from a Noack & Lasbleis (2020) mass-aware scaling so super-Earth runs anchor at the correct deep-mantle pressure rather than at an Earth-only value. After one round-trip the converged Zalmoxis $P_\mathrm{cmb}$ replaces the estimate.
+For `liquidus_super`, set `[planet].delta_T_super` (default 500 K, validated `>= 0`). The `tsurf_init` and `tcenter_init` fields are ignored under `liquidus_super`: the adiabat is set by $T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ at the CMB and integrated upward. Before Zalmoxis has populated `hf_row['P_cmb']` on the first call, the wrapper estimates $P_\mathrm{cmb}$ from a Noack & Lasbleis (2020)[^cite-noack2020] mass-aware scaling so super-Earth runs anchor at the correct deep-mantle pressure rather than at an Earth-only value. After one round-trip the converged Zalmoxis $P_\mathrm{cmb}$ replaces the estimate.
 
 ```toml
 [planet]
 mass_tot            = 5.0
 temperature_mode    = "liquidus_super"
-delta_T_super       = 200       # K above the Fei+2021 liquidus at P_cmb
+delta_T_super       = 200       # K above the Fei et al. (2021) liquidus at P_cmb
 # tsurf_init / tcenter_init are ignored under liquidus_super
 ```
 
@@ -100,13 +100,13 @@ equilibrate_tol      = 0.01     # 1% tolerance on R_int and P_surf
 
 Disable only if you are debugging IC behavior. With it disabled, the first SPIDER/Aragog step uses an unequilibrated structure and the first ~10 iterations of the main loop spend wall time on what equilibration would have done in fewer Zalmoxis calls.
 
-See [the equilibration explainer](../Explanations/proteus_coupling.md#pre-main-loop-equilibration) for the rationale.
+See [the equilibration explainer](../Explanations/proteus_coupling.md#initial-condition-equilibration-loop) for the rationale.
 
 ---
 
 ## Update triggers during coupled evolution
 
-Zalmoxis is not called every PROTEUS iteration. Re-solving structure is expensive (~tens of seconds per call) and the planet's bulk structure changes slowly. PROTEUS gates Zalmoxis re-solves on three composable triggers:
+Zalmoxis is not called every PROTEUS iteration. Re-solving structure is expensive (~tens of seconds per call) and the planet's bulk structure changes slowly. PROTEUS decides when to re-solve Zalmoxis from three composable triggers:
 
 ```toml
 [interior_struct.zalmoxis]
@@ -137,9 +137,9 @@ A `mesh_max_shift = 0.05` keeps the Aragog initial-condition reload safely withi
 
 ---
 
-## `dry_mantle` toggle
+## `dry_mantle` option
 
-This toggle controls whether dissolved volatiles enter the Zalmoxis density mixing model.
+This option controls whether dissolved volatiles enter the Zalmoxis density mixing model.
 
 ```toml
 [interior_struct.zalmoxis]
@@ -153,7 +153,7 @@ dry_mantle = true    # default; structure ignores dissolved-volatile mass
 
 ## SPIDER P-S table generation
 
-When `interior_energetics.module = "spider"`, Zalmoxis generates the SPIDER lookup tables on the fly from the active PALEOS EOS. Two knobs control resolution:
+When `interior_energetics.module = "spider"`, Zalmoxis generates the SPIDER lookup tables on the fly from the active PALEOS EOS. Two options control resolution:
 
 ```toml
 [interior_struct.zalmoxis]
@@ -188,7 +188,7 @@ nohup proteus start -c <cfg.toml> --offline --deterministic \
     > output/<run>/launch.log 2>&1 & disown
 ```
 
-Do not enable by default; it carries a small per-step cost. Use only when you observe noise-floor floating-point divergence between launches of the same config. Background and mechanism in the [Coupling explainer §determinism](../Explanations/proteus_coupling.md#determinism-and-the-deterministic-flag).
+Do not enable by default; it carries a small per-step cost. Use only when you observe noise-floor floating-point divergence between launches of the same config. Background and mechanism in the [Coupling explainer §determinism](../Explanations/proteus_coupling.md#determinism).
 
 ---
 
@@ -246,7 +246,7 @@ For numerically fragile anchors (wet 1 $M_\oplus$ at IW+4, reduced 1 $M_\oplus$ 
 ## Prioritised settings
 
 The list below is the short version of "what actually matters" when you stand up a new coupled Zalmoxis run.
-Knobs are ordered from highest to lowest impact on results and stability.
+Settings are ordered from highest to lowest impact on results and stability.
 Every default is read directly from `proteus.config` (see `src/proteus/config/_struct.py`, `_interior.py`, and `_planet.py`); if a quoted default disagrees with the source, the source wins.
 
 ### 1. `interior_struct.module` and `interior_energetics.module`
@@ -265,7 +265,7 @@ Use `interior_energetics.module = "spider"` only for SPIDER-parity comparisons, 
 **Recommendation**: set to `5e4` (50 kyr) for evolutionary runs that traverse the magma-ocean to crystallised-mantle transition; raise to `>= 1e9` to freeze the mesh for clean atmosphere-interior parity tests.
 
 This is the maximum wall time between two Zalmoxis re-solves.
-Real re-solves still gate on the dynamic triggers (`update_dphi_abs`, `update_dtmagma_frac`, `update_stale_ceiling`) and respect the `update_min_interval` floor.
+Real re-solves still depend on the dynamic triggers (`update_dphi_abs`, `update_dtmagma_frac`, `update_stale_ceiling`) and respect the `update_min_interval` floor.
 Setting `update_interval >= 1e9` together with `update_dphi_abs = 1.0` and `update_dtmagma_frac = 1.0` reduces Zalmoxis to a one-shot pre-main-loop solve, which is the right setup for "static-Zalmoxis" diagnostic runs.
 The 50 kyr value is tight enough to track the rheological transition, loose enough not to dominate wall time.
 
@@ -305,7 +305,7 @@ All bundled CHILI configs default to `prevent_warming = false`; follow that lead
 **Recommendation**: `0.8` for paper-quality runs with PALEOS MgSiO3.
 
 This sets the solidus relative to the liquidus as $T_\mathrm{sol} = f \cdot T_\mathrm{liq}$, controlling the width of the mushy zone in the PALEOS unified EOS.
-The 0.8 default approximates the [Stixrude+2014](https://ui.adsabs.harvard.edu/abs/2014RSPTA.37230076S) cryoscopic depression for MgSiO3 and is applied consistently across Zalmoxis density interpolation, SPIDER phase boundaries, and the VolatileProfile $\phi$-blending.
+The 0.8 default approximates the Stixrude (2014)[^cite-stixrude2014] cryoscopic depression for MgSiO3 and is applied consistently across Zalmoxis density interpolation, SPIDER phase boundaries, and the VolatileProfile $\phi$-blending.
 Setting `mushy_zone_factor = 1.0` collapses the mushy band to a sharp boundary.
 This factor acts on the PALEOS unified tables and on the PALEOS two-phase tables (`PALEOS-2phase`, `PALEOS-API-2phase`), where the solidus is `mushy_zone_factor * liquidus`. It is ignored for `WolfBower2018` and `RTPress100TPa`, which use explicit melting-curve files.
 
@@ -330,7 +330,7 @@ The relative cost of the equilibration loop is small (typically 5-15 Zalmoxis ca
 
 #### Summary table
 
-| Knob | Default | Recommended | Why it matters |
+| Setting | Default | Recommended | Why it matters |
 |---|---|---|---|
 | `interior_struct.module` | `"zalmoxis"` | `"zalmoxis"` | Mass-mode core fractions, self-consistent EOS, SPIDER P-S tables on demand. |
 | `interior_energetics.module` | `"aragog"` | `"aragog"` | CVODE + JAX-derived Jacobian, robust on stiff mushy-zone profiles. |
@@ -338,7 +338,7 @@ The relative cost of the equilibration loop is small (typically 5-15 Zalmoxis ca
 | `interior_struct.zalmoxis.outer_solver` | `"newton"` | `"newton"` | Converges on hot super-Earths where damped Picard stalls. |
 | `interior_energetics.aragog.phi_step_cap` | `0.0` | `0.05` | SUNDIALS root function caps per-call $|\Delta\phi|$ excursion. |
 | `planet.prevent_warming` | `false` | `false` | The clamp is energy-non-conserving in warming sub-steps. |
-| `interior_struct.zalmoxis.mushy_zone_factor` | `0.8` | `0.8` | Stixrude+2014 cryoscopic depression for PALEOS MgSiO3. |
+| `interior_struct.zalmoxis.mushy_zone_factor` | `0.8` | `0.8` | Stixrude (2014) cryoscopic depression for PALEOS MgSiO3. |
 | `interior_struct.zalmoxis.num_levels` | `150` | `150` | Zalmoxis structure mesh resolution. |
 | `interior_energetics.num_levels` | `80` | `80` | Aragog / SPIDER energetics mesh resolution. |
 | `interior_struct.zalmoxis.equilibrate_init` | `true` | `true` | Saves wall time in the first ~10 main-loop iterations. |
@@ -348,7 +348,7 @@ The relative cost of the equilibration loop is small (typically 5-15 Zalmoxis ca
 ## Worked example: minimal copy-paste TOML excerpt
 
 Anchored on `input/chili/chili_paleos_v1_1_0_1me_150res.toml` (the 1 $M_\oplus$ PALEOS reference run).
-This excerpt covers only the load-bearing blocks for Zalmoxis + Aragog coupling; merge it into a complete PROTEUS config with your own `[star]`, `[orbit]`, `[atmos_clim]`, `[outgas]`, `[escape]`, and `[params]` sections.
+This excerpt covers only the blocks that set up Zalmoxis and Aragog; merge it into a complete PROTEUS config with your own `[star]`, `[orbit]`, `[atmos_clim]`, `[outgas]`, `[escape]`, and `[params]` sections.
 
 ```toml
 [planet]
@@ -421,3 +421,8 @@ For the full reference (with `[params.dt]`, `[params.stop]`, atmosphere, escape,
 - **Equilibration warns "did not converge after 15 iterations".** Usually a sign that CALLIOPE is oscillating. Inspect $\Delta P/P$ trace; if it is dropping but slowly, raise `equilibrate_max_iter`. If it is non-monotonic, check the volatile inventory.
 
 For the why behind these, see the [Coupling to PROTEUS theory page](../Explanations/proteus_coupling.md).
+
+[^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).
+[^cite-noack2020]: L. Noack, M. Lasbleis, *[Parameterisations of interior properties of rocky planets. An investigation of planets with Earth-like compositions but variable iron content](https://doi.org/10.1051/0004-6361/202037723)*, Astronomy and Astrophysics, 638, A129, 2020. [SciX](https://scixplorer.org/abs/2020A%26A...638A.129N/abstract).
+[^cite-stixrude2014]: L. Stixrude, *[Melting in super-earths](https://doi.org/10.1098/rsta.2013.0076)*, Philosophical Transactions of the Royal Society A: Mathematical, Physical and Engineering Sciences, 372, 20130076, 2014. [SciX](https://scixplorer.org/abs/2014RSPTA.37230076S/abstract).
+[^cite-white2025]: N. I. White, J. Li, *[Initial thermal states of super-Earth exoplanets and implications for early dynamos](https://doi.org/10.1029/2024JE008550)*, Journal of Geophysical Research: Planets, 130, e2024JE008550, 2025. [SciX](https://scixplorer.org/abs/2025JGRE..13008550W/abstract).

@@ -19,7 +19,7 @@ run_interior(self.directories, self.config, self.hf_all,
 self.hf_row['Time']     += self.interior_o.dt
 self.hf_row['age_star'] += self.interior_o.dt
 
-# 3. Optional structure refresh (Zalmoxis, gated)
+# 3. Optional structure refresh (Zalmoxis, when a trigger fires)
 if (not self.init_stage
     and self.config.interior_struct.module == 'zalmoxis'
     and self.config.interior_struct.zalmoxis.update_interval > 0):
@@ -45,7 +45,7 @@ run_atmosphere(...)
 
 Two ordering details matter for how the wrapper reads `hf_row`. First, the interior thermal solver updates `T_magma`, `Phi_global`, `T_surf`, `T_core`, and `F_int` **before** the Zalmoxis trigger fires, so the structure update sees the most recent thermal state. Second, `Time` is advanced **before** the trigger, so any "elapsed since last update" comparison inside `update_structure_from_interior` is referenced against the new time. The `interior_o.last_successful_struct_time` clock is the partner anchor and is only advanced when a Zalmoxis re-solve actually converges.
 
-Zalmoxis is the most expensive of the per-iteration submodules (5 to 60 s depending on mass and EOS; CALLIOPE is tens of milliseconds, AGNI seconds-to-minutes), so the wrapper gates it on physical-state-change triggers rather than calling it every iteration. See [dynamic update triggers](#dynamic-update-triggers) below.
+Zalmoxis is the most expensive of the per-iteration submodules (5 to 60 s depending on mass and EOS; CALLIOPE is tens of milliseconds, AGNI seconds-to-minutes), so the wrapper re-solves it on physical-state-change triggers rather than at every iteration. See [dynamic update triggers](#dynamic-update-triggers) below.
 
 ## What the PROTEUS wrapper does
 
@@ -125,7 +125,7 @@ It reads the profiles and the convergence flags.
 On the JAX path with Aragog temperature arrays, `zalmoxis_solver` in `src/proteus/interior_struct/zalmoxis.py` rebuilds the density and temperature columns and evaluates a node with $P = 0$ at the target surface pressure; on the other paths a padded node keeps $P = 0$.
 Zalmoxis logs a warning when it returns a converged padded profile.
 
-The full set of TOML-derived inputs the wrapper translates is in `load_zalmoxis_configuration` (see `interior_struct/zalmoxis.py` lines ~420-564). Every TOML key from `[interior_struct]` and `[interior_struct.zalmoxis]` lands either in the Zalmoxis dict, in a derived helper (`mushy_zone_factors`, `_resolve_zalmoxis_temperature_mode`, `_resolve_zalmoxis_cmb_temperature`), or in a runtime gate (the JAX-disable path on init / equilibration calls is gated on whether the caller supplied `temperature_arrays`).
+The full set of TOML-derived inputs the wrapper translates is in `load_zalmoxis_configuration` (see `interior_struct/zalmoxis.py` lines ~420-564). Every TOML key from `[interior_struct]` and `[interior_struct.zalmoxis]` lands either in the Zalmoxis dict, in a derived helper (`mushy_zone_factors`, `_resolve_zalmoxis_temperature_mode`, `_resolve_zalmoxis_cmb_temperature`), or in a runtime check (the JAX-disable path on init / equilibration calls depends on whether the caller supplied `temperature_arrays`).
 
 ## Initial-condition anchors
 
@@ -211,7 +211,7 @@ Second, $P_\mathrm{surf}$ stuck at a hard ceiling (typically 1 GPa from the fall
 
 ## Dynamic update triggers
 
-Re-solving Zalmoxis costs 5 to 60 seconds depending on mass and EOS, which is non-negligible if the coupling loop runs $10^4$ to $10^5$ iterations. PROTEUS gates Zalmoxis re-solves on a small set of conditions evaluated at every iteration, composed with OR plus a time-floor AND:
+Re-solving Zalmoxis costs 5 to 60 seconds depending on mass and EOS, which is non-negligible if the coupling loop runs $10^4$ to $10^5$ iterations. PROTEUS decides whether to re-solve Zalmoxis from a small set of conditions evaluated at every iteration, composed with OR plus a time-floor AND:
 
 ```python
 fire_resolve = (
@@ -226,7 +226,7 @@ fire_resolve = (
 
 | Trigger | Default | Purpose |
 |---|---|---|
-| `update_interval` | $10^9$ yr | Ceiling on time since last call. The default effectively disables the ceiling for paper runs that gate updates only on the dynamical triggers below; production CHILI runs use $10^4$ to $10^5$ yr. Setting `update_interval = 0` disables dynamic updates entirely. |
+| `update_interval` | $10^9$ yr | Ceiling on time since last call. The default effectively disables the ceiling for paper runs that update only on the dynamical triggers below; production CHILI runs use $10^4$ to $10^5$ yr. Setting `update_interval = 0` disables dynamic updates entirely. |
 | `update_min_interval` | 0 yr | Floor on time since last call. Prevents thrashing when several triggers fire on consecutive iterations. The non-routine triggers (mesh convergence, stale ceiling) bypass this floor. |
 | `update_dphi_abs` | 0.05 | Phase-change trigger on $\|\Delta\Phi_\mathrm{global}\|$. |
 | `update_dtmagma_frac` | 0.05 | Thermal trigger on $\|\Delta T_\mathrm{magma}\| / T_\mathrm{magma}$. |
@@ -234,7 +234,7 @@ fire_resolve = (
 | `mesh_convergence_interval` | 10 yr | When `mesh_max_shift` clamps the per-update radius shift, the resulting partial blend is itself a non-converged state. The wrapper sets `mesh_shift_active = True`, and on the next iteration this short-elapsed trigger fires (bypassing `update_min_interval`) so the mesh continues to converge. |
 | Composition (H$_2$, H$_2$O) | $\|\Delta w / w\| \ge 0.05$ | Triggers when the dissolved mass fraction of H$_2$ or H$_2$O shifts by 5% of its previous value, since the volatile-profile-extended mantle EOS density depends on $w$. |
 
-The triggers are evaluated only outside the init stage. During init equilibration, `equilibrate_initial_state` calls Zalmoxis directly and bypasses the gating logic entirely.
+The triggers are evaluated only outside the init stage. During init equilibration, `equilibrate_initial_state` calls Zalmoxis directly and bypasses the trigger logic entirely.
 
 The trigger semantics deserve a worked example.
 Imagine a 1 $M_\oplus$ wet run with `update_interval = 5e4` yr, `update_dphi_abs = 0.05`, `update_dtmagma_frac = 0.05`.
@@ -356,7 +356,7 @@ The limits:
 The function-call coupling is robust at the file boundary, but several edges have known traps. New code paths should re-check these before claiming behavioural neutrality.
 
 !!! warning "`prevent_warming` clamp is energy non-conserving"
-    `config.planet.prevent_warming` (default `false`) gates an early ratchet `T_magma = min(new, prev)` in `interior_energetics/wrapper.py`. The clamp suits strictly-cooling regimes but **silently destroys the warming half of any heat-pump cycle** in a coupled magma-ocean run, producing an apparent "T_magma plateau" that is in fact an energy-leak bug. The clamp must remain at the `false` default for production runs. A separate runaway-T fallback (`interior_o.ic == 2` recovery path) remains active independently and is not affected. If you see `T_magma` byte-pinned across hundreds of consecutive iterations with any per-call energy residual growing without bound, check the `prevent_warming` flag first.
+    `config.planet.prevent_warming` (default `false`) enables an early ratchet `T_magma = min(new, prev)` in `interior_energetics/wrapper.py`. The clamp suits strictly-cooling regimes but **silently destroys the warming half of any heat-pump cycle** in a coupled magma-ocean run, producing an apparent "T_magma plateau" that is in fact an energy-leak bug. The clamp must remain at the `false` default for production runs. A separate runaway-T fallback (`interior_o.ic == 2` recovery path) remains active independently and is not affected. If you see `T_magma` byte-pinned across hundreds of consecutive iterations with any per-call energy residual growing without bound, check the `prevent_warming` flag first.
 
 ### `core_density` echo-back
 
@@ -396,9 +396,9 @@ The wrapper itself lives in the PROTEUS repository, not in Zalmoxis. The single 
 - [PROTEUS framework documentation](https://proteus-framework.org/PROTEUS): top-level entry.
 
 [^cite-noack2020]: L. Noack, M. Lasbleis, *[Parameterisations of interior properties of rocky planets. An investigation of planets with Earth-like compositions but variable iron content](https://doi.org/10.1051/0004-6361/202037723)*, Astronomy and Astrophysics, 638, A129, 2020. [SciX](https://scixplorer.org/abs/2020A%26A...638A.129N/abstract).
-[^cite-white2025]: N. I. White, J. Li, *[Initial Thermal States of Super-Earth Exoplanets and Implications for Early Dynamos](https://doi.org/10.1029/2024JE008550)*, Journal of Geophysical Research (Planets), 130(2), e2024JE008550, 2025. [SciX](https://scixplorer.org/abs/2025JGRE..13008550W/abstract).
-[^cite-sokolova2022]: T. S. Sokolova, P. I. Dorogokupets, A. I. Filippova, *[Equations of state of clino- and orthoenstatite and phase relations in the MgSiO$_3$ system at pressures up to 12 GPa and high temperatures](https://doi.org/10.1007/s00269-022-01212-7)*, Physics and Chemistry of Minerals, 49(9), 37, 2022. [SciX](https://scixplorer.org/abs/2022PCM....49...37S/abstract).
-[^cite-stixrude2022]: L. Stixrude, C. Lithgow-Bertelloni, *[Thermal expansivity, heat capacity and bulk modulus of the mantle](https://doi.org/10.1093/gji/ggab394)*, Geophysical Journal International, 228(2), 1119-1149, 2022. [SciX](https://scixplorer.org/abs/2022GeoJI.228.1119S/abstract).
-[^cite-belonoshko2005]: A. B. Belonoshko, N. V. Skorodumova, A. Rosengren, R. Ahuja, B. Johansson, L. Burakovsky, D. L. Preston, *[High-pressure melting of MgSiO$_3$](https://doi.org/10.1103/PhysRevLett.94.195701)*, Physical Review Letters, 94(19), 195701, 2005. [SciX](https://scixplorer.org/abs/2005PhRvL..94s5701B/abstract).
+[^cite-white2025]: N. I. White, J. Li, *[Initial thermal states of super-Earth exoplanets and implications for early dynamos](https://doi.org/10.1029/2024JE008550)*, Journal of Geophysical Research: Planets, 130, e2024JE008550, 2025. [SciX](https://scixplorer.org/abs/2025JGRE..13008550W/abstract).
+[^cite-sokolova2022]: T. S. Sokolova, P. I. Dorogokupets, A. I. Filippova, *[Equations of state of clino- and orthoenstatite and phase relations in the MgSiO$_3$ system at pressures up to 12 GPa and high temperatures](https://doi.org/10.1007/s00269-022-01212-7)*, Physics and Chemistry of Minerals, 49, 37, 2022. [SciX](https://scixplorer.org/abs/2022PCM....49...37S/abstract).
+[^cite-stixrude2022]: L. Stixrude, C. Lithgow-Bertelloni, *[Thermal expansivity, heat capacity and bulk modulus of the mantle](https://doi.org/10.1093/gji/ggab394)*, Geophysical Journal International, 228, 1119-1149, 2022. [SciX](https://scixplorer.org/abs/2022GeoJI.228.1119S/abstract).
+[^cite-belonoshko2005]: A. B. Belonoshko, N. V. Skorodumova, A. Rosengren, R. Ahuja, B. Johansson, L. Burakovsky, D. L. Preston, *[High-pressure melting of MgSiO$_3$](https://doi.org/10.1103/PhysRevLett.94.195701)*, Physical Review Letters, 94, 195701, 2005. [SciX](https://scixplorer.org/abs/2005PhRvL..94s5701B/abstract).
 [^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).
-[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of Iron at Earth's Inner Core Boundary Based on Fast X-ray Diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).
+[^cite-anzellini2013]: S. Anzellini, A. Dewaele, M. Mezouar, P. Loubeyre, G. Morard, *[Melting of iron at Earth's inner core boundary based on fast X-ray diffraction](https://doi.org/10.1126/science.1233514)*, Science, 340, 464-466, 2013. [SciX](https://scixplorer.org/abs/2013Sci...340..464A/abstract).
