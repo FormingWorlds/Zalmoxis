@@ -49,11 +49,11 @@ For non-H$_2$ components, $\sigma_{\mathrm{binodal}} = 1$ always.
 
 ---
 
-## Rogers+2025: H$_2$-MgSiO$_3$ binodal
+## Rogers et al. (2025): H$_2$-MgSiO$_3$ binodal
 
 ### Source
 
-Rogers et al. (2025)[^cite-rogers2025]. Analytic fit to the binodal temperature $T_\mathrm{b}(x_{\mathrm{H_2}}, P)$ from Eqs. A1-A11. Based on DFT-MD calculations of H$_2$-MgSiO$_3$ miscibility and asymmetric Margules parameters from Gilmore & Stixrude (2026)[^cite-gilmore2026].
+Rogers et al. (2025)[^cite-rogers2025] give an analytic fit to the binodal temperature $T_\mathrm{b}(x_{\mathrm{H_2}}, P)$ in Eqs. A1-A11, based on DFT-MD calculations of H$_2$-MgSiO$_3$ miscibility and asymmetric Margules parameters from Gilmore & Stixrude (2026)[^cite-gilmore2026].
 
 ### Physics
 
@@ -64,7 +64,7 @@ The binodal defines the phase boundary in $(T, P, x_{\mathrm{H_2}})$ space betwe
 
 The binodal temperature is computed from two generalized logistic branches: an ascending branch (small $x_{\mathrm{H_2}}$, rising toward $T_\mathrm{c}$) and a descending branch (large $x_{\mathrm{H_2}}$, falling from $T_\mathrm{c}$). Their natural crossing occurs near the critical mole fraction $x_\mathrm{c} \approx 0.739$. The implementation evaluates both branches at every composition and takes the minimum, $T_\mathrm{b} = \min(T_{\mathrm{asc}}, T_{\mathrm{desc}})$, which produces a smooth peak without an artificial kink at $x_\mathrm{c}$.
 
-![Rogers+2025 binodal](../img/rogers2025_binodal.png)
+![Rogers et al. (2025) binodal](../img/rogers2025_binodal.png)
 
 Binodal temperature $T_\mathrm{b}$ as a function of H$_2$ mole fraction at seven pressures (0.5 to 30 GPa). The binodal drops with increasing pressure: at high P, H$_2$ and MgSiO$_3$ are compressed together and miscibility is easier. At P > 35 GPa, $T_\mathrm{c} < 0$ and the system is always miscible. The peak near $x_\mathrm{c} = 0.739$ (5.4% H$_2$ by mass) is the most difficult composition to mix.
 
@@ -96,11 +96,11 @@ The function `rogers2025_binodal_temperature(x_H2, P_GPa)` returns the binodal t
 
 ---
 
-## Gupta+2025: H$_2$-H$_2$O critical curve
+## Gupta et al. (2025): H$_2$-H$_2$O critical curve
 
 ### Source
 
-Gupta et al. (2025)[^cite-gupta2025]. Gibbs free energy model with asymmetric Margules mixing parameters (Eqs. A2-A9, Table 1).
+Gupta et al. (2025)[^cite-gupta2025] give a Gibbs free energy model with asymmetric Margules mixing parameters (Eqs. A2-A9, Table 1).
 
 ### Physics
 
@@ -118,7 +118,7 @@ $$
 
 The critical pressure $P_\mathrm{c}(T)$ above which the system is always single-phase is given by Eq. A8. The critical temperature at a given pressure is obtained by inverting this relationship.
 
-![Gupta+2025 critical curve](../img/gupta2025_critical_curve.png)
+![Gupta et al. (2025) critical curve](../img/gupta2025_critical_curve.png)
 
 Critical temperature $T_\mathrm{c}(P)$ for the H$_2$-H$_2$O system. Below and to the right of the curve (shaded), the system separates into two immiscible phases. Above and to the left, it forms a single homogeneous fluid. The red dotted line marks the 647 K floor imposed by the H$_2$O critical point. Note the opposite pressure dependence compared to H$_2$-MgSiO$_3$: higher pressure makes H$_2$-H$_2$O mixing *harder*, because the positive volume of mixing favors phase separation under compression.
 

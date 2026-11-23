@@ -15,7 +15,7 @@ Given a total mass, layer composition, and temperature mode, Zalmoxis iterativel
 
 ## Features
 
-- **Multiple EOS families**: PALEOS unified tables (Attia et al. (2026)[^cite-attia2026]; iron, MgSiO$_3$, H$_2$O), Chabrier H$_2$ for sub-Neptune interiors, Wolf & Bower (2018)[^cite-wolf2018], Seager et al. (2007)[^cite-seager2007], and analytic polytropes
+- **Multiple EOS families**: PALEOS unified tables for iron, MgSiO$_3$ and H$_2$O from Attia et al. (2026)[^cite-attia2026], Chabrier H$_2$ for sub-Neptune interiors, Wolf & Bower (2018)[^cite-wolf2018], Seager et al. (2007)[^cite-seager2007], and analytic polytropes
 - **Multi-material mixing**: volume-additive harmonic mean with per-component phase-aware suppression
 - **H$_2$ miscibility**: binodal suppression models for H$_2$-silicate and H$_2$-H$_2$O phase boundaries
 - **Temperature modes**: adiabatic (self-consistent), isothermal, linear, or prescribed profiles

@@ -49,10 +49,10 @@ Inside PROTEUS, the IC selection is governed by `[planet].temperature_mode`, **n
 | `[planet].temperature_mode` | Zalmoxis structure-solve mode | When to use |
 |---|---|---|
 | `"adiabatic_from_cmb"` | `adiabatic_from_cmb` (CMB-anchored) | Default. Integrates the adiabat upward from `tcmb_init` at the converged $R_\mathrm{cmb}$. |
-| `"liquidus_super"` | `adiabatic_from_cmb` (CMB-anchored, $T_\mathrm{cmb}$ from liquidus) | Recommended for hot magma-ocean ICs. Anchors $T_\mathrm{cmb} = T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ from the Fei+2021 liquidus. |
+| `"liquidus_super"` | `adiabatic_from_cmb` (CMB-anchored, $T_\mathrm{cmb}$ from liquidus) | Recommended for hot magma-ocean ICs. Anchors $T_\mathrm{cmb} = T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ from the Fei et al. (2021)[^cite-fei2021] liquidus. |
 | `"adiabatic"` | `adiabatic` (surface-anchored) | Surface-anchored adiabat. Pairs with `[planet].tsurf_init` and `[planet].tcenter_init`. |
 | `"isentropic"` | `adiabatic` (mapped) | Energetics consumes `ini_entropy`; Zalmoxis T-profile is used only for the structure solve. |
-| `"accretion"` | `adiabatic` (mapped) | White & Li accretion thermal state. Energetics computes its own T(r) post-structure. |
+| `"accretion"` | `adiabatic` (mapped) | White & Li (2025)[^cite-white2025] accretion thermal state. Energetics computes its own T(r) post-structure. |
 | `"isothermal"`, `"linear"`, `"prescribed"` | unchanged | Diagnostics only. Not for production coupled runs. |
 
 For `liquidus_super`, set `[planet].delta_T_super` (default 500 K, validated `>= 0`). The `tsurf_init` and `tcenter_init` fields are ignored under `liquidus_super`: the adiabat is set by $T_\mathrm{liq}(P_\mathrm{cmb}) + \Delta T_\mathrm{super}$ at the CMB and integrated upward. Before Zalmoxis has populated `hf_row['P_cmb']` on the first call, the wrapper estimates $P_\mathrm{cmb}$ from a Noack & Lasbleis (2020)[^cite-noack2020] mass-aware scaling so super-Earth runs anchor at the correct deep-mantle pressure rather than at an Earth-only value. After one round-trip the converged Zalmoxis $P_\mathrm{cmb}$ replaces the estimate.
@@ -61,7 +61,7 @@ For `liquidus_super`, set `[planet].delta_T_super` (default 500 K, validated `>=
 [planet]
 mass_tot            = 5.0
 temperature_mode    = "liquidus_super"
-delta_T_super       = 200       # K above the Fei+2021 liquidus at P_cmb
+delta_T_super       = 200       # K above the Fei et al. (2021) liquidus at P_cmb
 # tsurf_init / tcenter_init are ignored under liquidus_super
 ```
 
@@ -305,7 +305,7 @@ All bundled CHILI configs default to `prevent_warming = false`; follow that lead
 **Recommendation**: `0.8` for paper-quality runs with PALEOS MgSiO3.
 
 This sets the solidus relative to the liquidus as $T_\mathrm{sol} = f \cdot T_\mathrm{liq}$, controlling the width of the mushy zone in the PALEOS unified EOS.
-The 0.8 default approximates the [Stixrude+2014](https://ui.adsabs.harvard.edu/abs/2014RSPTA.37230076S) cryoscopic depression for MgSiO3 and is applied consistently across Zalmoxis density interpolation, SPIDER phase boundaries, and the VolatileProfile $\phi$-blending.
+The 0.8 default approximates the Stixrude (2014)[^cite-stixrude2014] cryoscopic depression for MgSiO3 and is applied consistently across Zalmoxis density interpolation, SPIDER phase boundaries, and the VolatileProfile $\phi$-blending.
 Setting `mushy_zone_factor = 1.0` collapses the mushy band to a sharp boundary.
 This factor acts on the PALEOS unified tables and on the PALEOS two-phase tables (`PALEOS-2phase`, `PALEOS-API-2phase`), where the solidus is `mushy_zone_factor * liquidus`. It is ignored for `WolfBower2018` and `RTPress100TPa`, which use explicit melting-curve files.
 
@@ -338,7 +338,7 @@ The relative cost of the equilibration loop is small (typically 5-15 Zalmoxis ca
 | `interior_struct.zalmoxis.outer_solver` | `"newton"` | `"newton"` | Converges on hot super-Earths where damped Picard stalls. |
 | `interior_energetics.aragog.phi_step_cap` | `0.0` | `0.05` | SUNDIALS root function caps per-call $|\Delta\phi|$ excursion. |
 | `planet.prevent_warming` | `false` | `false` | The clamp is energy-non-conserving in warming sub-steps. |
-| `interior_struct.zalmoxis.mushy_zone_factor` | `0.8` | `0.8` | Stixrude+2014 cryoscopic depression for PALEOS MgSiO3. |
+| `interior_struct.zalmoxis.mushy_zone_factor` | `0.8` | `0.8` | Stixrude (2014) cryoscopic depression for PALEOS MgSiO3. |
 | `interior_struct.zalmoxis.num_levels` | `150` | `150` | Zalmoxis structure mesh resolution. |
 | `interior_energetics.num_levels` | `80` | `80` | Aragog / SPIDER energetics mesh resolution. |
 | `interior_struct.zalmoxis.equilibrate_init` | `true` | `true` | Saves wall time in the first ~10 main-loop iterations. |
@@ -422,4 +422,7 @@ For the full reference (with `[params.dt]`, `[params.stop]`, atmosphere, escape,
 
 For the why behind these, see the [Coupling to PROTEUS theory page](../Explanations/proteus_coupling.md).
 
+[^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).
 [^cite-noack2020]: L. Noack, M. Lasbleis, *[Parameterisations of interior properties of rocky planets. An investigation of planets with Earth-like compositions but variable iron content](https://doi.org/10.1051/0004-6361/202037723)*, Astronomy and Astrophysics, 638, A129, 2020. [SciX](https://scixplorer.org/abs/2020A%26A...638A.129N/abstract).
+[^cite-stixrude2014]: L. Stixrude, *[Melting in super-earths](https://doi.org/10.1098/rsta.2013.0076)*, Philosophical Transactions of the Royal Society A: Mathematical, Physical and Engineering Sciences, 372, 20130076, 2014. [SciX](https://scixplorer.org/abs/2014RSPTA.37230076S/abstract).
+[^cite-white2025]: N. I. White, J. Li, *[Initial thermal states of super-Earth exoplanets and implications for early dynamos](https://doi.org/10.1029/2024JE008550)*, Journal of Geophysical Research: Planets, 130, e2024JE008550, 2025. [SciX](https://scixplorer.org/abs/2025JGRE..13008550W/abstract).
