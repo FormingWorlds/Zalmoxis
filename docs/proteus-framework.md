@@ -30,7 +30,7 @@ In a PROTEUS coupled run, three submodules deliver mantle physics in a fixed per
 | **Zalmoxis** | Static structure: hydrostatic equilibrium, mass-radius, density, gravity, $R_\mathrm{cmb}$, $P_\mathrm{cmb}$ | $\rho(r)$, $g(r)$, $P(r)$ |
 | **Aragog** or **SPIDER** | Thermal evolution: entropy ODE, $T(r)$ trajectory, surface heat flux | $S(r)$, $T(r)$ |
 
-Zalmoxis is the slowest of the three, so PROTEUS re-solves it only when a physical-state-change trigger fires ($\Delta \phi$, $\Delta T_\mathrm{magma}$, time-since-call ceilings), rather than at every iteration.
+Zalmoxis is the slowest of the three, so in the main loop PROTEUS re-solves it when one of its physical-state-change triggers fires ($\Delta \phi$, $\Delta T_\mathrm{magma}$, time-since-call ceilings), rather than at every iteration.
 
 The atmosphere is closed by AGNI, JANUS, or a dummy radiative-balance module, depending on the configuration; the surface temperature couples back into the entropy ODE.
 

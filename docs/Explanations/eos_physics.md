@@ -43,7 +43,7 @@ In adiabatic mode, the temperature is parameterized as $T(P)$ rather than $T(r)$
 
 ## Chabrier H/He (Pure H$_2$)
 
-The `Chabrier:H` EOS provides temperature- and pressure-dependent properties for pure molecular hydrogen from the DirEOS2021 tables of Chabrier et al. (2019)[^cite-chabrier2019] and Chabrier & Debras (2021)[^cite-chabrierdebras2021].
+The `Chabrier:H` EOS provides temperature- and pressure-dependent properties for pure molecular hydrogen from the DirEOS2021 tables of Chabrier et al. (2019)[^cite-chabrier2019] and Chabrier & Debras (2021)[^cite-chabrier2021].
 The table covers all H$_2$ regimes: molecular, dissociated atomic, and ionized.
 
 **Grid.** 121 $\times$ 441 points ($\log T$, $\log P$): $T = 100$ to $10^8$ K, $P = 1$ Pa to $10^{22}$ Pa (53,361 grid points).
@@ -205,7 +205,7 @@ It is useful for quick exploration, testing, and exotic compositions (graphite, 
 [^cite-attia2026]: M. Attia, T. Lichtenberg, E. Jungová, M. Sastre, *[PALEOS: Multiphase equations of state and mass-radius relations for exoplanet interiors](https://doi.org/10.1051/0004-6361/202660790)*, Astronomy and Astrophysics, 713, A225, 2026. [SciX](https://scixplorer.org/abs/2026A%26A...713A.225A/abstract).
 [^cite-belonoshko2005]: A. B. Belonoshko, N. V. Skorodumova, A. Rosengren, R. Ahuja, B. Johansson, L. Burakovsky, D. L. Preston, *[High-pressure melting of MgSiO$_3$](https://doi.org/10.1103/PhysRevLett.94.195701)*, Physical Review Letters, 94, 195701, 2005. [SciX](https://scixplorer.org/abs/2005PhRvL..94s5701B/abstract).
 [^cite-chabrier2019]: G. Chabrier, S. Mazevet, F. Soubiran, *[A new equation of state for dense hydrogen-helium mixtures](https://doi.org/10.3847/1538-4357/aaf99f)*, The Astrophysical Journal, 872, 51, 2019. [SciX](https://scixplorer.org/abs/2019ApJ...872...51C/abstract).
-[^cite-chabrierdebras2021]: G. Chabrier, F. Debras, *[A new equation of state for dense hydrogen-helium mixtures. II. Taking into account hydrogen-helium interactions](https://doi.org/10.3847/1538-4357/abfc48)*, The Astrophysical Journal, 917, 4, 2021. [SciX](https://scixplorer.org/abs/2021ApJ...917....4C/abstract).
+[^cite-chabrier2021]: G. Chabrier, F. Debras, *[A new equation of state for dense hydrogen-helium mixtures. II. Taking into account hydrogen-helium interactions](https://doi.org/10.3847/1538-4357/abfc48)*, The Astrophysical Journal, 917, 4, 2021. [SciX](https://scixplorer.org/abs/2021ApJ...917....4C/abstract).
 [^cite-fei2021]: Y. Fei, C. T. Seagle, J. P. Townsend, C. A. McCoy, A. Boujibar, P. Driscoll, L. Shulenburger, M. D. Furnish, *[Melting and density of MgSiO$_3$ determined by shock compression of bridgmanite to 1254 GPa](https://doi.org/10.1038/s41467-021-21170-y)*, Nature Communications, 12, 876, 2021. [SciX](https://scixplorer.org/abs/2021NatCo..12..876F/abstract).
 [^cite-monteux2016]: J. Monteux, D. Andrault, H. Samuel, *[On the cooling of a deep terrestrial magma ocean](https://doi.org/10.1016/j.epsl.2016.05.010)*, Earth and Planetary Science Letters, 448, 140-149, 2016. [SciX](https://scixplorer.org/abs/2016E%26PSL.448..140M/abstract).
 [^cite-mosenfelder2009]: J. L. Mosenfelder, P. D. Asimow, D. J. Frost, D. C. Rubie, T. J. Ahrens, *[The MgSiO$_3$ system at high pressure: Thermodynamic properties of perovskite, postperovskite, and melt from global inversion of shock and static compression data](https://doi.org/10.1029/2008JB005900)*, Journal of Geophysical Research: Solid Earth, 114, B01203, 2009. [SciX](https://scixplorer.org/abs/2009JGRB..114.1203M/abstract).
