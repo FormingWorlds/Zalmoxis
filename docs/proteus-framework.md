@@ -30,7 +30,7 @@ In a PROTEUS coupled run, three submodules deliver mantle physics in a fixed per
 | **Zalmoxis** | Static structure: hydrostatic equilibrium, mass-radius, density, gravity, $R_\mathrm{cmb}$, $P_\mathrm{cmb}$ | $\rho(r)$, $g(r)$, $P(r)$ |
 | **Aragog** or **SPIDER** | Thermal evolution: entropy ODE, $T(r)$ trajectory, surface heat flux | $S(r)$, $T(r)$ |
 
-Zalmoxis is the slowest of the three, so PROTEUS gates re-solves on physical-state-change triggers ($\Delta \phi$, $\Delta T_\mathrm{magma}$, time-since-call ceilings) rather than calling it every iteration.
+Zalmoxis is the slowest of the three, so PROTEUS re-solves it only when a physical-state-change trigger fires ($\Delta \phi$, $\Delta T_\mathrm{magma}$, time-since-call ceilings), rather than at every iteration.
 
 The atmosphere is closed by AGNI, JANUS, or a dummy radiative-balance module, depending on the configuration; the surface temperature couples back into the entropy ODE.
 
@@ -78,7 +78,7 @@ The EOS identifier strings (`PALEOS:iron`, `Seager2007:MgSiO3`, `Chabrier:H`, `A
 Zalmoxis is invoked from PROTEUS via:
 
 - `proteus/interior_struct/zalmoxis.py`: the wrapper that builds the call-time dict, calls `zalmoxis.solver.main()`, writes the Aragog mesh file, and validates the schema contract on `zalmoxis_output.dat`.
-- `proteus/config/_struct.py`: the attrs-based schema for `[interior_struct.zalmoxis]`. All knobs documented in the how-to map back to fields here.
+- `proteus/config/_struct.py`: the attrs-based schema for `[interior_struct.zalmoxis]`. All options documented in the how-to map back to fields here.
 - `proteus/interior_energetics/wrapper.py`: hosts `equilibrate_initial_state()`, the pre-main-loop CALLIOPE + Zalmoxis convergence loop.
 
 These files live in the [PROTEUS repository](https://github.com/FormingWorlds/PROTEUS), not in Zalmoxis. Their per-symbol API documentation is rendered in the PROTEUS docs; this site documents the Zalmoxis side of the contract.

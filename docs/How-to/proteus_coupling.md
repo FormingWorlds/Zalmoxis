@@ -106,7 +106,7 @@ See [the equilibration explainer](../Explanations/proteus_coupling.md#initial-co
 
 ## Update triggers during coupled evolution
 
-Zalmoxis is not called every PROTEUS iteration. Re-solving structure is expensive (~tens of seconds per call) and the planet's bulk structure changes slowly. PROTEUS gates Zalmoxis re-solves on three composable triggers:
+Zalmoxis is not called every PROTEUS iteration. Re-solving structure is expensive (~tens of seconds per call) and the planet's bulk structure changes slowly. PROTEUS decides when to re-solve Zalmoxis from three composable triggers:
 
 ```toml
 [interior_struct.zalmoxis]
@@ -137,9 +137,9 @@ A `mesh_max_shift = 0.05` keeps the Aragog initial-condition reload safely withi
 
 ---
 
-## `dry_mantle` toggle
+## `dry_mantle` option
 
-This toggle controls whether dissolved volatiles enter the Zalmoxis density mixing model.
+This option controls whether dissolved volatiles enter the Zalmoxis density mixing model.
 
 ```toml
 [interior_struct.zalmoxis]
@@ -153,7 +153,7 @@ dry_mantle = true    # default; structure ignores dissolved-volatile mass
 
 ## SPIDER P-S table generation
 
-When `interior_energetics.module = "spider"`, Zalmoxis generates the SPIDER lookup tables on the fly from the active PALEOS EOS. Two knobs control resolution:
+When `interior_energetics.module = "spider"`, Zalmoxis generates the SPIDER lookup tables on the fly from the active PALEOS EOS. Two options control resolution:
 
 ```toml
 [interior_struct.zalmoxis]
@@ -246,7 +246,7 @@ For numerically fragile anchors (wet 1 $M_\oplus$ at IW+4, reduced 1 $M_\oplus$ 
 ## Prioritised settings
 
 The list below is the short version of "what actually matters" when you stand up a new coupled Zalmoxis run.
-Knobs are ordered from highest to lowest impact on results and stability.
+Settings are ordered from highest to lowest impact on results and stability.
 Every default is read directly from `proteus.config` (see `src/proteus/config/_struct.py`, `_interior.py`, and `_planet.py`); if a quoted default disagrees with the source, the source wins.
 
 ### 1. `interior_struct.module` and `interior_energetics.module`
@@ -265,7 +265,7 @@ Use `interior_energetics.module = "spider"` only for SPIDER-parity comparisons, 
 **Recommendation**: set to `5e4` (50 kyr) for evolutionary runs that traverse the magma-ocean to crystallised-mantle transition; raise to `>= 1e9` to freeze the mesh for clean atmosphere-interior parity tests.
 
 This is the maximum wall time between two Zalmoxis re-solves.
-Real re-solves still gate on the dynamic triggers (`update_dphi_abs`, `update_dtmagma_frac`, `update_stale_ceiling`) and respect the `update_min_interval` floor.
+Real re-solves still depend on the dynamic triggers (`update_dphi_abs`, `update_dtmagma_frac`, `update_stale_ceiling`) and respect the `update_min_interval` floor.
 Setting `update_interval >= 1e9` together with `update_dphi_abs = 1.0` and `update_dtmagma_frac = 1.0` reduces Zalmoxis to a one-shot pre-main-loop solve, which is the right setup for "static-Zalmoxis" diagnostic runs.
 The 50 kyr value is tight enough to track the rheological transition, loose enough not to dominate wall time.
 
@@ -330,7 +330,7 @@ The relative cost of the equilibration loop is small (typically 5-15 Zalmoxis ca
 
 #### Summary table
 
-| Knob | Default | Recommended | Why it matters |
+| Setting | Default | Recommended | Why it matters |
 |---|---|---|---|
 | `interior_struct.module` | `"zalmoxis"` | `"zalmoxis"` | Mass-mode core fractions, self-consistent EOS, SPIDER P-S tables on demand. |
 | `interior_energetics.module` | `"aragog"` | `"aragog"` | CVODE + JAX-derived Jacobian, robust on stiff mushy-zone profiles. |
@@ -348,7 +348,7 @@ The relative cost of the equilibration loop is small (typically 5-15 Zalmoxis ca
 ## Worked example: minimal copy-paste TOML excerpt
 
 Anchored on `input/chili/chili_paleos_v1_1_0_1me_150res.toml` (the 1 $M_\oplus$ PALEOS reference run).
-This excerpt covers only the load-bearing blocks for Zalmoxis + Aragog coupling; merge it into a complete PROTEUS config with your own `[star]`, `[orbit]`, `[atmos_clim]`, `[outgas]`, `[escape]`, and `[params]` sections.
+This excerpt covers only the central blocks for Zalmoxis + Aragog coupling; merge it into a complete PROTEUS config with your own `[star]`, `[orbit]`, `[atmos_clim]`, `[outgas]`, `[escape]`, and `[params]` sections.
 
 ```toml
 [planet]

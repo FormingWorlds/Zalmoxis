@@ -66,8 +66,8 @@ See [configuration guide](../How-to/configuration.md#melting-curve-selection) fo
 
 | File | Location | Format | Source | Description |
 |------|----------|--------|--------|-------------|
-| `massradiusEarthlikeRocky.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | Zeng et al. (2019)[^cite-zeng2019] ([model curves](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html)) | Earth-like rocky M-R curve (32.5% Fe + 67.5% MgSiO3) |
-| `massradius_50percentH2O_300K_1mbar.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | Zeng et al. (2019)[^cite-zeng2019] ([model curves](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html)) | 50% H2O + 50% rocky M-R curve (300 K, 1 mbar surface) |
+| `massradiusEarthlikeRocky.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | curve from the [Zeng model page](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html), released with Zeng et al. (2019)[^cite-zeng2019] | Earth-like rocky M-R curve (32.5% Fe + 67.5% MgSiO3) |
+| `massradius_50percentH2O_300K_1mbar.txt` | `data/mass_radius_curves/` | Space-separated (M in M_Earth, R in R_Earth) | curve from the [Zeng model page](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html), released with Zeng et al. (2019)[^cite-zeng2019] | 50% H2O + 50% rocky M-R curve (300 K, 1 mbar surface) |
 
 ### Radial profiles (validation benchmarks)
 
@@ -101,7 +101,7 @@ The analytic EOS additionally provides three materials (MgFeSiO3, graphite, SiC)
 
 The following curves serve as reference benchmarks for validating the Zalmoxis internal structure model under both rocky and water-rich configurations:
 
-* Earth-like rocky exoplanets, with a 32.5% Fe + 67.5% MgSiO3 composition, taken from Zeng et al. (2019)[^cite-zeng2019] ([model curves](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html)).
+* Earth-like rocky exoplanets, with a 32.5% Fe + 67.5% MgSiO3 composition, taken from the mass-radius curves that the [Zeng model page](https://lweb.cfa.harvard.edu/~lzeng/planetmodels.html) releases with Zeng et al. (2019)[^cite-zeng2019].
 
 * Water exoplanets, with a 50% Earth-like rocky core (32.5% Fe + 67.5% MgSiO3) and 50% water by mass at 300 K and surface pressure of 1 mbar.
 
