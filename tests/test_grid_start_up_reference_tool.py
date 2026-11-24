@@ -465,7 +465,7 @@ def test_the_source_only_restamp_refuses_a_code_change(tmp_path):
     tool.dump_compact({**ref, 'commit': _git(root, 'rev-parse', 'HEAD')}, path)
     with pytest.raises(ValueError, match=r'a\.py.*run python'):
         tool.restamp_source(path, root, pkg)
-    _git(root, 'rm', '-q', 'src/zalmoxis/a.py')
+    _git(root, 'rm', '-qf', 'src/zalmoxis/a.py')
     tool.dump_compact(ref, path)
     with pytest.raises(ValueError, match='a.py') as err:
         tool.restamp_source(path, root, pkg)

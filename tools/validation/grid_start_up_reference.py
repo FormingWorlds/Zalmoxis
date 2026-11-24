@@ -9,8 +9,8 @@ docstrings and comments, with the Python minor version that parsed them. The gri
 test compares its solves with the stored structures and stops when a table md5 differs. The
 slow reference test solves the 4 again and fails when they move or when the source hash
 differs; then run this script again and commit the file. Under another Python minor,
-``--source-only`` writes the hash again without solving, when the structures were solved in
-a clean tree and the code at the stored commit and now has the same trees.
+``--source-only`` writes the hash again without solving, when the structures were solved
+with a clean ``src`` tree and the code at the stored commit and now has the same trees.
 
 Usage::
 
@@ -99,7 +99,7 @@ def md5(path):
         return hashlib.file_digest(f, 'md5').hexdigest()
 
 
-def _code(text):
+def _code(text, name='<unknown>'):
     """``ast.dump`` of the module ``text`` (bytes, in the encoding the module declares)
     without its bare string statements, which include the docstrings; comments are not in
     the tree."""
@@ -108,7 +108,7 @@ def _code(text):
         value = s.value if isinstance(s, ast.Expr) else None
         return isinstance(value, ast.Constant) and isinstance(value.value, str)
 
-    tree = ast.parse(text)
+    tree = ast.parse(text, name)
     for node in ast.walk(tree):
         for field in ('body', 'orelse', 'finalbody'):
             if isinstance(getattr(node, field, None), list):
@@ -120,7 +120,7 @@ def _hash(texts):
     """sha256 over the names (sorted) and code trees of ``texts``, a dict name -> bytes."""
     h = hashlib.sha256()
     for name in sorted(texts):
-        h.update(name.encode() + b'\0' + _code(texts[name]))
+        h.update(name.encode() + b'\0' + _code(texts[name], name))
     return h.hexdigest()
 
 
@@ -144,15 +144,15 @@ def source_mismatch(stored, pkg):
 
 def restamp_source(path=REFERENCE, root=ROOT, pkg=None):
     """Write the source hash of ``path`` again under this Python and keep every other value,
-    when the structures come from a clean tree and the stored modules at the stored commit
-    and in ``pkg`` have the same code; raises ValueError otherwise."""
+    when the structures come from a clean ``src`` tree and the stored modules at the stored
+    commit and in ``pkg`` have the same code; raises ValueError otherwise."""
     if pkg is None:
         import zalmoxis
 
         pkg = Path(zalmoxis.__file__).parent
     ref = json.loads(Path(path).read_text())
     commit, files = ref['commit'], ref['source']['files']
-    if not re.fullmatch('[0-9a-f]{40,64}', str(commit)):
+    if not (isinstance(commit, str) and re.fullmatch('[0-9a-f]{40,64}', commit)):
         raise ValueError(f'the stored commit {commit!r} is not a commit sha: run {REFRESH}')
     if ref.get('source_tree_clean') is not True:
         raise ValueError(f'the structures were solved in a tree with changes: run {REFRESH}')
@@ -176,10 +176,10 @@ def restamp_source(path=REFERENCE, root=ROOT, pkg=None):
                 f'{rel}/{f} at commit {commit} is not in {root} nor its origin: run {REFRESH}'
             ) from None
     try:
-        now = source_hash(files, pkg)
+        now, old = source_hash(files, pkg), _hash(then)
     except (OSError, SyntaxError) as err:
         raise ValueError(f'{err}: run {REFRESH}') from None
-    if _hash(then) != now:
+    if old != now:
         raise ValueError(
             f'the code of the Zalmoxis source changed since {commit}: run {REFRESH}'
         )

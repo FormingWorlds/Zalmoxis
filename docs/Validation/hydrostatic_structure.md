@@ -442,7 +442,7 @@ An edit of a docstring or a comment therefore keeps the hash.
 The test stops when a table differs from the stored one.
 A separate nightly job solves REF again and fails when it moves by more than 0.1 K in the mantle, $10^{-5}$ in radius, central pressure or core radius, or $4 \times 10^{-5}$ in CMB pressure, or when the hash of the code differs.
 Then `python -m tools.validation.grid_start_up_reference` writes the file again.
-The syntax tree depends on the Python minor version, which the file stores with the hash; under another minor version the job fails, and `python -m tools.validation.grid_start_up_reference --source-only` writes the hash again without solving, after it checks that REF was solved in a clean tree and that the code at the stored commit has the same trees as now.
+The syntax tree depends on the Python minor version, which the file stores with the hash; under another minor version the job fails, and `python -m tools.validation.grid_start_up_reference --source-only` writes the hash again without solving, after it checks that REF was solved with no uncommitted change under `src` and that the code at the stored commit has the same trees as now.
 
 **Why it matters.** These solves set the radius, the core size and the initial mantle temperature of every PROTEUS run with Zalmoxis.
 
