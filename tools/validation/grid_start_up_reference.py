@@ -9,8 +9,8 @@ docstrings and comments, with the Python minor version that parsed them. The gri
 test compares its solves with the stored structures and stops when a table md5 differs. The
 slow reference test solves the 4 again and fails when they move or when the source hash
 differs; then run this script again and commit the file. Under another Python minor,
-``--source-only`` writes the hash again without solving, when the code at the stored commit
-and now has the same trees.
+``--source-only`` writes the hash again without solving, when the structures were solved in
+a clean tree and the code at the stored commit and now has the same trees.
 
 Usage::
 
@@ -152,7 +152,7 @@ def restamp_source(path=REFERENCE, root=ROOT, pkg=None):
         pkg = Path(zalmoxis.__file__).parent
     ref = json.loads(Path(path).read_text())
     commit, files = ref['commit'], ref['source']['files']
-    if not re.fullmatch('[0-9a-f]{40,64}', commit):
+    if not re.fullmatch('[0-9a-f]{40,64}', str(commit)):
         raise ValueError(f'the stored commit {commit!r} is not a commit sha: run {REFRESH}')
     if ref.get('source_tree_clean') is not True:
         raise ValueError(f'the structures were solved in a tree with changes: run {REFRESH}')
@@ -175,7 +175,10 @@ def restamp_source(path=REFERENCE, root=ROOT, pkg=None):
             raise ValueError(
                 f'{rel}/{f} at commit {commit} is not in {root} nor its origin: run {REFRESH}'
             ) from None
-    now = source_hash(files, pkg)
+    try:
+        now = source_hash(files, pkg)
+    except (OSError, SyntaxError) as err:
+        raise ValueError(f'{err}: run {REFRESH}') from None
     if _hash(then) != now:
         raise ValueError(
             f'the code of the Zalmoxis source changed since {commit}: run {REFRESH}'
