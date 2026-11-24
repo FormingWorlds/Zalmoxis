@@ -429,8 +429,9 @@ def test_the_source_only_restamp_keeps_the_structures_after_a_docstring_edit(tmp
 
 def test_the_source_only_restamp_refuses_a_code_change(tmp_path):
     """A code edit since the stored commit stops the restamp, names the full write and
-    leaves the file as it was; so do a stored commit that is not in the repository, a listed
-    file that is not at the stored commit and an imported package outside the repository."""
+    leaves the file as it was; so do a stored commit that is not a sha or not in the
+    repository, a listed file that is not at the stored commit or not in the package, and an
+    imported package outside the repository."""
     tool = _tool()
     root, pkg, path = _repo_with_reference(tmp_path, ('X = 1.5', 'X = 1.6'))
     before = path.read_bytes()
@@ -447,6 +448,15 @@ def test_the_source_only_restamp_refuses_a_code_change(tmp_path):
         tool.restamp_source(path, root, pkg)
     with pytest.raises(ValueError, match='the imported zalmoxis'):
         tool.restamp_source(path, root, tmp_path)
+    tool.dump_compact({**ref, 'commit': None}, path)
+    with pytest.raises(ValueError, match='not a commit sha'):
+        tool.restamp_source(path, root, pkg)
+    _git(root, 'rm', '-q', 'src/zalmoxis/a.py')
+    tool.dump_compact(ref, path)
+    with pytest.raises(ValueError, match='a.py') as err:
+        tool.restamp_source(path, root, pkg)
+    assert err.value.args[0].endswith(tool.REFRESH)
+    assert path.read_bytes() == before
 
 
 def test_the_source_only_restamp_refuses_structures_from_a_tree_with_changes(tmp_path):
@@ -539,8 +549,9 @@ def test_the_hash_of_the_stored_modules_follows_their_code(tmp_path, name, patte
     import zalmoxis
 
     tool = _tool()
-    files = json.loads(tool.REFERENCE.read_text())['source']['files']
     shutil.copytree(os.path.dirname(zalmoxis.__file__), tmp_path, dirs_exist_ok=True)
+    stored = json.loads(tool.REFERENCE.read_text())['source']['files']
+    files = [f for f in stored if (tmp_path / f).is_file()]
     h = tool.source_hash(files, tmp_path)
     text, n = re.subn(pattern, repl, (tmp_path / name).read_text(), count=1)
     assert name in files and n == 1
