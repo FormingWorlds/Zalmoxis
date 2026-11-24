@@ -410,3 +410,39 @@ def test_the_source_only_restamp_refuses_a_code_change(tmp_path):
     tool.dump_compact({**ref, 'commit': '0' * 40}, path)
     with pytest.raises(ValueError, match='0' * 40):
         tool.restamp_source(path, root, pkg)
+
+
+@pytest.mark.parametrize(
+    'name, old, new, kept',
+    [
+        (
+            'eos_vinet.py',
+            '"""Rose-Vinet equation of state',
+            '"""The Rose-Vinet equation of state',
+            True,
+        ),
+        ('constants.py', '# Gravitational constant', '# Newton constant', True),
+        ('constants.py', 'G = 6.67428e-11', 'G = 6.67430e-11', False),
+    ],
+    ids=['module-docstring', 'comment', 'constant'],
+)
+def test_the_stored_hash_follows_the_code_of_the_hashed_modules(tmp_path, name, old, new, kept):
+    """On a copy of the stored modules, a docstring or comment edit of one keeps the stored
+    hash and a 1-constant edit fails the source check with the full write."""
+    import shutil
+
+    import zalmoxis
+
+    tool = _tool()
+    pkg = os.path.dirname(zalmoxis.__file__)
+    stored = json.loads(tool.REFERENCE.read_text())['source']
+    assert name in stored['files'] and tool.source_mismatch(stored, pkg) is None
+    for f in stored['files']:
+        (tmp_path / f).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy(os.path.join(pkg, f), tmp_path / f)
+    text = (tmp_path / name).read_text()
+    assert text.count(old) == 1
+    (tmp_path / name).write_text(text.replace(old, new))
+    reason = tool.source_mismatch(stored, tmp_path)
+    assert (reason is None) is kept
+    assert kept or reason.endswith(tool.REFRESH)
