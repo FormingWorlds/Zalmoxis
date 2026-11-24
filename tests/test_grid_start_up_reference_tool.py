@@ -184,6 +184,7 @@ def test_the_writer_stores_the_4_structures_with_tables_and_source(tmp_path, mon
     assert len(ref['commit']) == 40 and 'config.py' in ref['source']['files']
     pkg, files = tool.loaded_sources()
     assert ref['source']['sha256'] == tool.source_hash(ref['source']['files'], pkg)
+    assert ref['source']['python'] == tool.PYTHON
     back = tool.load(tmp_path / 'ref.json', dicts)
     np.testing.assert_array_equal(
         back['resolve']['mass_enclosed'], np.array([0.0, 0.5, 1.0]) * 4.177602725330534e24
