@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -522,30 +523,26 @@ def test_the_source_only_command_restamps_the_file_it_names(tmp_path, monkeypatc
 
 
 @pytest.mark.parametrize(
-    'name, old, new, kept',
+    'name, pattern, repl, kept',
     [
-        (
-            'eos_vinet.py',
-            '"""Rose-Vinet equation of state',
-            '"""The Rose-Vinet equation of state',
-            True,
-        ),
-        ('constants.py', '# Gravitational constant', '# Newton constant', True),
-        ('constants.py', 'G = 6.67428e-11', 'G = 6.67430e-11', False),
+        ('eos_vinet.py', '"""', '"""Edited. ', True),
+        ('constants.py', r'\Z', '# an added comment\n', True),
+        ('constants.py', r'(?m)^(\w+ = )(?=\d)', r'\g<1>2 * ', False),
     ],
     ids=['module-docstring', 'comment', 'constant'],
 )
-def test_the_hash_of_the_stored_modules_follows_their_code(tmp_path, name, old, new, kept):
+def test_the_hash_of_the_stored_modules_follows_their_code(tmp_path, name, pattern, repl, kept):
     """On a copy of the modules the stored reference lists, a docstring or comment edit of one
-    keeps the hash and a 1-constant edit changes it; the live package and the stored hash are
-    the slow test's to compare, so a code edit in a pull request does not fail this one."""
+    keeps the hash and doubling its first numeric constant changes it; the live package and
+    the stored hash are the slow test's to compare, so a code edit in a pull request does not
+    fail this one."""
     import zalmoxis
 
     tool = _tool()
     files = json.loads(tool.REFERENCE.read_text())['source']['files']
     shutil.copytree(os.path.dirname(zalmoxis.__file__), tmp_path, dirs_exist_ok=True)
     h = tool.source_hash(files, tmp_path)
-    text = (tmp_path / name).read_text()
-    assert name in files and text.count(old) == 1
-    (tmp_path / name).write_text(text.replace(old, new))
+    text, n = re.subn(pattern, repl, (tmp_path / name).read_text(), count=1)
+    assert name in files and n == 1
+    (tmp_path / name).write_text(text)
     assert (tool.source_hash(files, tmp_path) == h) is kept

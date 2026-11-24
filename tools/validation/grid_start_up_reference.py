@@ -25,6 +25,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -99,8 +100,9 @@ def md5(path):
 
 
 def _code(text):
-    """``ast.dump`` of the module ``text`` without its bare string statements, which include
-    the docstrings; comments are not in the tree."""
+    """``ast.dump`` of the module ``text`` (bytes, in the encoding the module declares)
+    without its bare string statements, which include the docstrings; comments are not in
+    the tree."""
 
     def text_only(s):
         value = s.value if isinstance(s, ast.Expr) else None
@@ -115,7 +117,7 @@ def _code(text):
 
 
 def _hash(texts):
-    """sha256 over the names (sorted) and code trees of ``texts``, a dict name -> source."""
+    """sha256 over the names (sorted) and code trees of ``texts``, a dict name -> bytes."""
     h = hashlib.sha256()
     for name in sorted(texts):
         h.update(name.encode() + b'\0' + _code(texts[name]))
@@ -124,7 +126,7 @@ def _hash(texts):
 
 def source_hash(files, root):
     """Hash of the code of ``files``, paths relative to ``root``, under the running Python."""
-    return _hash({name: (Path(root) / name).read_text() for name in files})
+    return _hash({name: (Path(root) / name).read_bytes() for name in files})
 
 
 def source_mismatch(stored, pkg):
@@ -142,31 +144,37 @@ def source_mismatch(stored, pkg):
 
 def restamp_source(path=REFERENCE, root=ROOT, pkg=None):
     """Write the source hash of ``path`` again under this Python and keep every other value,
-    when the stored modules at the stored commit and in ``pkg`` have the same code; raises
-    ValueError when the commit cannot be read or the code changed."""
+    when the structures come from a clean tree and the stored modules at the stored commit
+    and in ``pkg`` have the same code; raises ValueError otherwise."""
     if pkg is None:
         import zalmoxis
 
         pkg = Path(zalmoxis.__file__).parent
     ref = json.loads(Path(path).read_text())
     commit, files = ref['commit'], ref['source']['files']
-    rel = Path(pkg).resolve().relative_to(Path(root).resolve()).as_posix()
+    if not re.fullmatch('[0-9a-f]{40,64}', commit):
+        raise ValueError(f'the stored commit {commit!r} is not a commit sha: run {REFRESH}')
+    if ref.get('source_tree_clean') is not True:
+        raise ValueError(f'the structures were solved in a tree with changes: run {REFRESH}')
+    here, top = Path(pkg).resolve(), Path(root).resolve()
+    if not here.is_relative_to(top):
+        raise ValueError(f'the imported zalmoxis {pkg} is not in {root}: install this tree')
+    rel = here.relative_to(top).as_posix()
     git = ('git', '-C', str(root))
     if subprocess.run(
         (*git, 'cat-file', '-e', f'{commit}^{{commit}}'), capture_output=True
     ).returncode:
         subprocess.run((*git, 'fetch', '-q', 'origin', commit), capture_output=True)
-    try:
-        then = {
-            f: subprocess.check_output(
-                (*git, 'show', f'{commit}:{rel}/{f}'), text=True, stderr=subprocess.DEVNULL
+    then = {}
+    for f in files:
+        try:
+            then[f] = subprocess.check_output(
+                (*git, 'show', f'{commit}:{rel}/{f}'), stderr=subprocess.DEVNULL
             )
-            for f in files
-        }
-    except subprocess.CalledProcessError:
-        raise ValueError(
-            f'commit {commit} is not in {root} nor its origin: run {REFRESH}'
-        ) from None
+        except subprocess.CalledProcessError:
+            raise ValueError(
+                f'{rel}/{f} at commit {commit} is not in {root} nor its origin: run {REFRESH}'
+            ) from None
     now = source_hash(files, pkg)
     if _hash(then) != now:
         raise ValueError(
@@ -265,7 +273,11 @@ def write(path=REFERENCE):
 def main(argv=None):
     """Command line entry: write the reference, or with ``--source-only`` its source hash."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--out', default=str(REFERENCE), help='reference file to write')
+    parser.add_argument(
+        '--out',
+        default=str(REFERENCE),
+        help='reference file to write, or to restamp with --source-only',
+    )
     parser.add_argument('--source-only', action='store_true', help='write only the source hash')
     args = parser.parse_args(argv)
     ref = restamp_source(args.out) if args.source_only else write(args.out)
