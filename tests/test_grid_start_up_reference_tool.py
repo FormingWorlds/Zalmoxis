@@ -128,11 +128,14 @@ def test_the_compact_file_reads_back_equal_with_one_block_per_line(tmp_path):
 
 
 def test_the_source_hash_follows_the_code_and_not_the_order(tmp_path):
-    """The hash changes with one constant of one file and stays with the order of the names."""
+    """The hash changes with one constant of one file or the name of a file, and stays with
+    the order of the names."""
     for name, text in (('a.py', 'x = 1\n'), ('b.py', 'y = 2\n')):
         (tmp_path / name).write_text(text)
     h = _tool().source_hash(['a.py', 'b.py'], tmp_path)
     assert h == _tool().source_hash(['b.py', 'a.py'], tmp_path)
+    (tmp_path / 'c.py').write_text('y = 2\n')
+    assert _tool().source_hash(['a.py', 'c.py'], tmp_path) != h
     (tmp_path / 'b.py').write_text('y = 3\n')
     assert _tool().source_hash(['a.py', 'b.py'], tmp_path) != h
 
@@ -188,7 +191,7 @@ def test_the_writer_stores_the_4_structures_with_tables_and_source(tmp_path, mon
     assert len(ref['commit']) == 40 and 'config.py' in ref['source']['files']
     pkg, files = tool.loaded_sources()
     assert ref['source']['sha256'] == tool.source_hash(ref['source']['files'], pkg)
-    assert ref['source']['python'] == tool.PYTHON
+    assert ref['source'].get('python') == tool.PYTHON
     back = tool.load(tmp_path / 'ref.json', dicts)
     np.testing.assert_array_equal(
         back['resolve']['mass_enclosed'], np.array([0.0, 0.5, 1.0]) * 4.177602725330534e24
@@ -373,10 +376,10 @@ def test_the_source_check_names_the_restamp_for_another_python_minor(tmp_path):
     stored = {'files': ['a.py'], 'sha256': _hash_of(tmp_path, _MOD), 'python': minor}
     assert tool.source_mismatch(stored, tmp_path) is None
     msg = tool.source_mismatch({**stored, 'python': '3.9'}, tmp_path)
-    assert 'Python 3.9' in msg and f'{tool.REFRESH} --source-only' in msg
+    assert msg is not None and 'Python 3.9' in msg and f'{tool.REFRESH} --source-only' in msg
     (tmp_path / 'a.py').write_text(_MOD.replace('X = 1.5', 'X = 1.6'))
     msg = tool.source_mismatch(stored, tmp_path)
-    assert 'source' in msg and msg.endswith(tool.REFRESH)
+    assert msg is not None and 'source' in msg and msg.endswith(tool.REFRESH)
     assert tool.source_mismatch({k: v for k, v in stored.items() if k != 'python'}, tmp_path)
 
 
@@ -430,8 +433,8 @@ def test_the_source_only_restamp_keeps_the_structures_after_a_docstring_edit(tmp
 def test_the_source_only_restamp_refuses_a_code_change(tmp_path):
     """A code edit since the stored commit stops the restamp, names the full write and
     leaves the file as it was; so do a stored commit that is not a sha or not in the
-    repository, a listed file that is not at the stored commit or not in the package, and an
-    imported package outside the repository."""
+    repository, a listed file that is not at the stored commit or not in the package, a module
+    that does not parse on either side, and an imported package outside the repository."""
     tool = _tool()
     root, pkg, path = _repo_with_reference(tmp_path, ('X = 1.5', 'X = 1.6'))
     before = path.read_bytes()
@@ -448,8 +451,19 @@ def test_the_source_only_restamp_refuses_a_code_change(tmp_path):
         tool.restamp_source(path, root, pkg)
     with pytest.raises(ValueError, match='the imported zalmoxis'):
         tool.restamp_source(path, root, tmp_path)
-    tool.dump_compact({**ref, 'commit': None}, path)
-    with pytest.raises(ValueError, match='not a commit sha'):
+    for commit in (None, int('1' * 40)):
+        tool.dump_compact({**ref, 'commit': commit}, path)
+        with pytest.raises(ValueError, match='not a commit sha'):
+            tool.restamp_source(path, root, pkg)
+    (pkg / 'a.py').write_text('X = = 1\n')
+    tool.dump_compact(ref, path)
+    with pytest.raises(ValueError, match=r'a\.py.*run python'):
+        tool.restamp_source(path, root, pkg)
+    _git(root, 'add', 'src/zalmoxis/a.py')
+    _git(root, 'commit', '-qm', 'broken')
+    (pkg / 'a.py').write_text(_MOD)
+    tool.dump_compact({**ref, 'commit': _git(root, 'rev-parse', 'HEAD')}, path)
+    with pytest.raises(ValueError, match=r'a\.py.*run python'):
         tool.restamp_source(path, root, pkg)
     _git(root, 'rm', '-q', 'src/zalmoxis/a.py')
     tool.dump_compact(ref, path)
