@@ -9,11 +9,11 @@ permissions:
   contents: read
   pages: write
   id-token: write
+concurrency:
+  group: pages
+  cancel-in-progress: false
 jobs:
-  deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
+  build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/configure-pages@v5
@@ -22,9 +22,17 @@ jobs:
         with:
           python-version: 3.x
       - run: pip install zensical markdown-include pymdown-extensions mkdocstrings mkdocstrings-python
-      - run: zensical build --clean 
+      - run: zensical build --clean
       - uses: actions/upload-pages-artifact@v4
         with:
           path: site
+  # Deploy in its own job: an artifact lookup right after the upload can miss it (actions/deploy-pages#451).
+  deploy:
+    needs: build
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
       - uses: actions/deploy-pages@v4
         id: deployment
