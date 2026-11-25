@@ -5,6 +5,10 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
+import shutil
+import subprocess
+import sys
 
 import numpy as np
 import pytest
@@ -123,12 +127,15 @@ def test_the_compact_file_reads_back_equal_with_one_block_per_line(tmp_path):
     assert not any(line.startswith(' ') for line in lines)
 
 
-def test_the_source_hash_follows_the_bytes_and_not_the_order(tmp_path):
-    """The hash changes with one byte of one file and stays with the order of the names."""
+def test_the_source_hash_follows_the_code_and_not_the_order(tmp_path):
+    """The hash changes with one constant of one file or the name of a file, and stays with
+    the order of the names."""
     for name, text in (('a.py', 'x = 1\n'), ('b.py', 'y = 2\n')):
         (tmp_path / name).write_text(text)
     h = _tool().source_hash(['a.py', 'b.py'], tmp_path)
     assert h == _tool().source_hash(['b.py', 'a.py'], tmp_path)
+    (tmp_path / 'c.py').write_text('y = 2\n')
+    assert _tool().source_hash(['a.py', 'c.py'], tmp_path) != h
     (tmp_path / 'b.py').write_text('y = 3\n')
     assert _tool().source_hash(['a.py', 'b.py'], tmp_path) != h
 
@@ -184,6 +191,7 @@ def test_the_writer_stores_the_4_structures_with_tables_and_source(tmp_path, mon
     assert len(ref['commit']) == 40 and 'config.py' in ref['source']['files']
     pkg, files = tool.loaded_sources()
     assert ref['source']['sha256'] == tool.source_hash(ref['source']['files'], pkg)
+    assert ref['source'].get('python') == tool.PYTHON
     back = tool.load(tmp_path / 'ref.json', dicts)
     np.testing.assert_array_equal(
         back['resolve']['mass_enclosed'], np.array([0.0, 0.5, 1.0]) * 4.177602725330534e24
@@ -274,3 +282,292 @@ def test_a_generated_file_from_another_install_is_left_out(monkeypatch):
     )
     with pytest.raises(ValueError, match='other.py'):
         _tool().loaded_sources()
+
+
+_MOD = '''"""Module doc."""
+
+X = 1.5  # a comment
+"""Doc of X."""
+NAME = 'iron'
+
+
+class A:
+    """Class doc."""
+
+    def f(self, y):
+        """Function doc."""
+        print(NAME)
+        return y * X
+
+    def g(self):
+        try:
+            pass
+        except ValueError:
+            'except text'
+        else:
+            'else text'
+        finally:
+            'finally text'
+'''
+
+
+def _hash_of(tmp_path, text):
+    """The source hash of one module ``a.py`` with ``text``."""
+    (tmp_path / 'a.py').write_text(text)
+    return _tool().source_hash(['a.py'], tmp_path)
+
+
+@pytest.mark.parametrize(
+    'old, new',
+    [
+        ('"""Module doc."""', '"""Another module doc."""'),
+        ('# a comment', '# another, longer comment'),
+        ('"""Doc of X."""', '"""Another doc of X."""'),
+        ('"""Class doc."""', '"""Class doc\n\n    over 3 lines."""'),
+        ('        """Function doc."""\n', ''),
+        ('\n\nclass A', '\n\n\n# a block\n# of comments\nclass A'),
+        ("'except text'", "'other text'"),
+        ("'else text'", "'other text'"),
+        ("'finally text'", "'other text'"),
+    ],
+    ids=[
+        'module-doc',
+        'comment',
+        'attribute-doc',
+        'class-doc',
+        'function-doc-gone',
+        'lines',
+        'except-text',
+        'else-text',
+        'finally-text',
+    ],
+)
+def test_a_docstring_or_comment_edit_keeps_the_source_hash(tmp_path, old, new):
+    """A docstring, a string after an assignment or a comment does nothing at run time, so
+    an edit of one, also one that moves every later line, keeps the hash."""
+    h = _hash_of(tmp_path, _MOD)
+    assert _MOD.count(old) == 1
+    assert _hash_of(tmp_path, _MOD.replace(old, new)) == h
+
+
+@pytest.mark.parametrize(
+    'old, new',
+    [
+        ('X = 1.5', 'X = 1.6'),
+        ('y * X', 'y / X'),
+        ('def f(self, y)', 'def f(self, z, y=y)'),
+        ("NAME = 'iron'", "NAME = 'rock'"),
+        ('print(NAME)', 'print(X)'),
+    ],
+    ids=['constant', 'operator', 'signature', 'string-constant', 'call-statement'],
+)
+def test_a_code_edit_changes_the_source_hash(tmp_path, old, new):
+    """One changed constant, operator, argument, string value or call changes the hash."""
+    h = _hash_of(tmp_path, _MOD)
+    assert _MOD.count(old) == 1
+    assert _hash_of(tmp_path, _MOD.replace(old, new)) != h
+
+
+def test_the_source_check_names_the_restamp_for_another_python_minor(tmp_path):
+    """The hash is the syntax tree of one Python minor: a stored minor other than the running
+    one fails with the source-only command, and a code change fails with the full write."""
+    tool = _tool()
+    minor = f'{sys.version_info.major}.{sys.version_info.minor}'
+    stored = {'files': ['a.py'], 'sha256': _hash_of(tmp_path, _MOD), 'python': minor}
+    assert tool.source_mismatch(stored, tmp_path) is None
+    msg = tool.source_mismatch({**stored, 'python': '3.9'}, tmp_path)
+    assert msg is not None and 'Python 3.9' in msg and f'{tool.REFRESH} --source-only' in msg
+    (tmp_path / 'a.py').write_text(_MOD.replace('X = 1.5', 'X = 1.6'))
+    msg = tool.source_mismatch(stored, tmp_path)
+    assert msg is not None and 'source' in msg and msg.endswith(tool.REFRESH)
+    assert tool.source_mismatch({k: v for k, v in stored.items() if k != 'python'}, tmp_path)
+
+
+def _git(root, *args):
+    """Run git in ``root`` and return its output."""
+    user = ('-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false')
+    cmd = ('git', '-C', str(root), *user, *args)
+    return subprocess.run(cmd, check=True, capture_output=True, text=True).stdout.strip()
+
+
+def _repo_with_reference(tmp_path, edit):
+    """A git repository with ``src/zalmoxis/a.py`` committed, a reference that names that
+    commit with a hash of another Python minor, and a second commit with ``edit`` applied;
+    returns (root, package folder, reference path)."""
+    root = tmp_path / 'repo'
+    pkg = root / 'src' / 'zalmoxis'
+    pkg.mkdir(parents=True)
+    _git(root, 'init', '-q')
+    (pkg / 'a.py').write_text(_MOD)
+    _git(root, 'add', '.')
+    _git(root, 'commit', '-qm', 'first')
+    ref = {
+        'commit': _git(root, 'rev-parse', 'HEAD'),
+        'source_tree_clean': True,
+        'source': {'files': ['a.py'], 'sha256': 'f' * 64, 'python': '3.9'},
+        'first': {'radii': [0.0, 1.0e6], 'cmb_mass': 3.97e24},
+    }
+    path = tmp_path / 'ref.json'
+    _tool().dump_compact(ref, path)
+    (pkg / 'a.py').write_text(_MOD.replace(*edit))
+    _git(root, 'commit', '-qam', 'second')
+    return root, pkg, path
+
+
+def test_the_source_only_restamp_keeps_the_structures_after_a_docstring_edit(tmp_path):
+    """With the code at the stored commit and now equal but for docstrings, the restamp
+    writes the hash and minor of the running Python and keeps every other value."""
+    tool = _tool()
+    root, pkg, path = _repo_with_reference(tmp_path, ('"""Function doc."""', '"""New."""'))
+    before = json.loads(path.read_text())
+    tool.restamp_source(path, root, pkg)
+    after = json.loads(path.read_text())
+    assert after['source']['sha256'] == tool.source_hash(['a.py'], pkg) != 'f' * 64
+    assert after['source']['python'] == f'{sys.version_info.major}.{sys.version_info.minor}'
+    assert {k: v for k, v in after.items() if k != 'source'} == {
+        k: v for k, v in before.items() if k != 'source'
+    }
+    assert after['source']['files'] == ['a.py']
+
+
+def test_the_source_only_restamp_refuses_a_code_change(tmp_path):
+    """A code edit since the stored commit stops the restamp, names the full write and
+    leaves the file as it was; so do a stored commit that is not a sha or not in the
+    repository, a listed file that is not at the stored commit or not in the package, a module
+    that does not parse on either side, and an imported package outside the repository."""
+    tool = _tool()
+    root, pkg, path = _repo_with_reference(tmp_path, ('X = 1.5', 'X = 1.6'))
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match='changed since') as err:
+        tool.restamp_source(path, root, pkg)
+    assert err.value.args[0].endswith(tool.REFRESH)
+    assert path.read_bytes() == before
+    ref = json.loads(before)
+    tool.dump_compact({**ref, 'commit': '0' * 40}, path)
+    with pytest.raises(ValueError, match='0' * 40):
+        tool.restamp_source(path, root, pkg)
+    tool.dump_compact({**ref, 'source': {**ref['source'], 'files': ['a.py', 'b.py']}}, path)
+    with pytest.raises(ValueError, match='src/zalmoxis/b.py at commit'):
+        tool.restamp_source(path, root, pkg)
+    with pytest.raises(ValueError, match='the imported zalmoxis'):
+        tool.restamp_source(path, root, tmp_path)
+    for commit in (None, int('1' * 40)):
+        tool.dump_compact({**ref, 'commit': commit}, path)
+        with pytest.raises(ValueError, match='not a commit sha'):
+            tool.restamp_source(path, root, pkg)
+    (pkg / 'a.py').write_text('X = = 1\n')
+    tool.dump_compact(ref, path)
+    with pytest.raises(ValueError, match=r'a\.py.*run python'):
+        tool.restamp_source(path, root, pkg)
+    _git(root, 'add', 'src/zalmoxis/a.py')
+    _git(root, 'commit', '-qm', 'broken')
+    (pkg / 'a.py').write_text(_MOD)
+    tool.dump_compact({**ref, 'commit': _git(root, 'rev-parse', 'HEAD')}, path)
+    with pytest.raises(ValueError, match=r'a\.py.*run python'):
+        tool.restamp_source(path, root, pkg)
+    _git(root, 'rm', '-qf', 'src/zalmoxis/a.py')
+    tool.dump_compact(ref, path)
+    with pytest.raises(ValueError, match='a.py') as err:
+        tool.restamp_source(path, root, pkg)
+    assert err.value.args[0].endswith(tool.REFRESH)
+    assert path.read_bytes() == before
+
+
+def test_the_source_only_restamp_refuses_structures_from_a_tree_with_changes(tmp_path):
+    """Structures written from a tree with uncommitted changes are not the code of the stored
+    commit, so the restamp refuses them and leaves the file as it was."""
+    tool = _tool()
+    root, pkg, path = _repo_with_reference(tmp_path, ('"""Function doc."""', '"""New."""'))
+    tool.dump_compact({**json.loads(path.read_text()), 'source_tree_clean': False}, path)
+    before = path.read_bytes()
+    with pytest.raises(ValueError, match='tree with changes'):
+        tool.restamp_source(path, root, pkg)
+    assert path.read_bytes() == before
+
+
+def test_the_source_only_restamp_takes_only_a_commit_sha(tmp_path):
+    """A stored commit that is not a hex sha stops the restamp before git reads it, so an
+    option in its place never runs."""
+    tool = _tool()
+    root, pkg, path = _repo_with_reference(tmp_path, ('"""Function doc."""', '"""New."""'))
+    _git(root, 'remote', 'add', 'origin', str(root))
+    marker = tmp_path / 'ran'
+    tool.dump_compact(
+        {**json.loads(path.read_text()), 'commit': f'--upload-pack=touch {marker};'}, path
+    )
+    with pytest.raises(ValueError, match='not a commit sha'):
+        tool.restamp_source(path, root, pkg)
+    assert not marker.exists()
+
+
+def test_the_source_only_restamp_fetches_a_commit_that_only_the_origin_holds(tmp_path):
+    """A stored commit that is on no local branch (a squash-merged branch) is fetched by sha."""
+    tool = _tool()
+    root, pkg, path = _repo_with_reference(tmp_path, ('"""Function doc."""', '"""New."""'))
+    up = tmp_path / 'up'
+    _git(tmp_path, 'clone', '-q', str(root), str(up))
+    (up / 'src' / 'zalmoxis' / 'a.py').write_text(_MOD.replace('Class doc.', 'Other doc.'))
+    _git(up, 'commit', '-qam', 'third')
+    commit = _git(up, 'rev-parse', 'HEAD')
+    _git(root, 'remote', 'add', 'origin', str(up))
+    tool.dump_compact({**json.loads(path.read_text()), 'commit': commit}, path)
+    tool.restamp_source(path, root, pkg)
+    assert json.loads(path.read_text())['source']['sha256'] == tool.source_hash(['a.py'], pkg)
+
+
+def test_the_source_hash_reads_the_encoding_a_module_declares(tmp_path):
+    """The hash parses the bytes of each module, so a module in its declared encoding hashes
+    like the same code in UTF-8, whatever the locale."""
+    for folder, data in (
+        ('l1', "# -*- coding: latin-1 -*-\nX = '\u00e9'\n".encode('latin-1')),
+        ('u8', "X = '\u00e9'\n".encode()),
+    ):
+        (tmp_path / folder).mkdir()
+        (tmp_path / folder / 'a.py').write_bytes(data)
+    tool = _tool()
+    assert tool.source_hash(['a.py'], tmp_path / 'l1') == tool.source_hash(
+        ['a.py'], tmp_path / 'u8'
+    )
+
+
+def test_the_source_only_command_restamps_the_file_it_names(tmp_path, monkeypatch, capsys):
+    """main --source-only --out restamps that file without a solve and prints the commit and
+    the source hash."""
+    tool = _tool()
+    calls = []
+    monkeypatch.setattr(tool, 'write', lambda path: pytest.fail('the command solved'))
+    monkeypatch.setattr(
+        tool,
+        'restamp_source',
+        lambda path: calls.append(path) or {'commit': 'c', 'source': {'sha256': 's'}},
+    )
+    tool.main(['--source-only', '--out', str(tmp_path / 'r.json')])
+    assert calls == [str(tmp_path / 'r.json')]
+    assert capsys.readouterr().out.split() == ['c', 's']
+
+
+@pytest.mark.parametrize(
+    'name, pattern, repl, kept',
+    [
+        ('eos_vinet.py', '"""', '"""Edited. ', True),
+        ('constants.py', r'\Z', '# an added comment\n', True),
+        ('constants.py', r'(?m)^(\w+ = )(?=\d)', r'\g<1>2 * ', False),
+    ],
+    ids=['module-docstring', 'comment', 'constant'],
+)
+def test_the_hash_of_the_stored_modules_follows_their_code(tmp_path, name, pattern, repl, kept):
+    """On a copy of the modules the stored reference lists, a docstring or comment edit of one
+    keeps the hash and doubling its first numeric constant changes it; the live package and
+    the stored hash are the slow test's to compare, so a code edit in a pull request does not
+    fail this one."""
+    import zalmoxis
+
+    tool = _tool()
+    shutil.copytree(os.path.dirname(zalmoxis.__file__), tmp_path, dirs_exist_ok=True)
+    stored = json.loads(tool.REFERENCE.read_text())['source']['files']
+    files = [f for f in stored if (tmp_path / f).is_file()]
+    h = tool.source_hash(files, tmp_path)
+    text, n = re.subn(pattern, repl, (tmp_path / name).read_text(), count=1)
+    assert name in files and n == 1
+    (tmp_path / name).write_text(text)
+    assert (tool.source_hash(files, tmp_path) == h) is kept

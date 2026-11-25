@@ -2898,9 +2898,11 @@ def test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source
     mantle temperature within 0.1 K of the stored one up to the second-highest mantle node, the
     top node within 1 K in the re-solves and 2 K in the first solves at 1 atm, the radius,
     central pressure and core radius within 1e-5 and the CMB pressure within
-    2 tol_REF / (1 - cmf) = 4e-5; then the sha256 of the stored list of Zalmoxis modules
-    equals the stored one. A failure means the source or a table moved the reference: run
-    ``python -m tools.validation.grid_start_up_reference`` and commit the file."""
+    2 tol_REF / (1 - cmf) = 4e-5; then the hash of the code of the stored list of Zalmoxis
+    modules (their syntax trees without docstrings and comments) equals the stored one under
+    the stored Python minor. A failure means the code or a table moved the reference: run
+    ``python -m tools.validation.grid_start_up_reference`` and commit the file; under another
+    Python minor its ``--source-only`` writes the hash again without solving."""
     _need_paleos()
     import zalmoxis
 
@@ -2917,4 +2919,5 @@ def test_the_stored_grid_start_up_reference_is_the_converged_solve_of_the_source
         assert dT <= 0.1 and abs(dT_top) <= (2.0 if key.startswith('first') else 1.0), key
         assert max(abs(dR), abs(dPc), abs(dRc)) <= 1e-5 and abs(dPcmb) <= bound, key
     pkg = os.path.dirname(os.path.abspath(zalmoxis.__file__))
-    assert grid_ref.source_hash(stored['source']['files'], pkg) == stored['source']['sha256']
+    reason = grid_ref.source_mismatch(stored['source'], pkg)
+    assert reason is None, reason

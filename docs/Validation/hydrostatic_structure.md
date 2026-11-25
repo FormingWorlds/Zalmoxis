@@ -437,10 +437,12 @@ Relative differences are $|x - x_\mathrm{REF}| / |x_\mathrm{REF}|$.
 
 **How we know the right answer.** REF runs until its mass error is 100 times smaller than the mass tolerance of the ramp, $10^{-4}$.
 So REF stands for the converged structure; this is a convergence check, not an external reference.
-REF is solved once on each path and stored in `tests/data/grid_start_up_reference.json`, with the md5 of both EOS tables and a hash of the Zalmoxis source that solved it (every Zalmoxis module the solve loads, without `_version.py`, which the install writes with the commit in it).
+REF is solved once on each path and stored in `tests/data/grid_start_up_reference.json`, with the md5 of both EOS tables and a hash of the code of the Zalmoxis source that solved it: the syntax tree of every Zalmoxis module the solve loads, without docstrings and comments and without `_version.py`, which the install writes with the commit in it.
+An edit of a docstring or a comment therefore keeps the hash.
 The test stops when a table differs from the stored one.
-A separate nightly job solves REF again and fails when it moves by more than 0.1 K in the mantle, $10^{-5}$ in radius, central pressure or core radius, or $4 \times 10^{-5}$ in CMB pressure, or when the source hash differs.
+A separate nightly job solves REF again and fails when it moves by more than 0.1 K in the mantle, $10^{-5}$ in radius, central pressure or core radius, or $4 \times 10^{-5}$ in CMB pressure, or when the hash of the code differs.
 Then `python -m tools.validation.grid_start_up_reference` writes the file again.
+The syntax tree depends on the Python minor version, which the file stores with the hash; under another minor version the job fails, and `python -m tools.validation.grid_start_up_reference --source-only` writes the hash again without solving, after it checks that REF was solved with no uncommitted change under `src` and that the code at the stored commit has the same trees as now.
 
 **Why it matters.** These solves set the radius, the core size and the initial mantle temperature of every PROTEUS run with Zalmoxis.
 

@@ -4,23 +4,28 @@ The case is the first structure solve of the PROTEUS grid test case with core ma
 0.95 (0.7 Earth masses, H 1000 ppmw) and its first start-up re-solve, each on the numpy path
 and on the JAX path (``use_jax``). This script solves the 4 at the reference tolerance and
 writes ``tests/data/grid_start_up_reference.json`` with the commit, the md5 of each EOS
-table and the sha256 of the Zalmoxis modules the solves load. The grid start-up test
-compares its solves with the stored structures and stops when a table md5 differs. The slow
-reference test solves the 4 again and fails when they move or when the source hash differs;
-then run this script again and commit the file.
+table and the sha256 of the syntax trees of the Zalmoxis modules the solves load, without
+docstrings and comments, with the Python minor version that parsed them. The grid start-up
+test compares its solves with the stored structures and stops when a table md5 differs. The
+slow reference test solves the 4 again and fails when they move or when the source hash
+differs; then run this script again and commit the file. Under another Python minor,
+``--source-only`` writes the hash again without solving, when the structures were solved
+with a clean ``src`` tree and the code at the stored commit and now has the same trees.
 
 Usage::
 
-    python -m tools.validation.grid_start_up_reference [--out <file>]
+    python -m tools.validation.grid_start_up_reference [--out <file>] [--source-only]
 """
 
 from __future__ import annotations
 
 import argparse
+import ast
 import hashlib
 import json
 import os
 import platform
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -31,6 +36,7 @@ ROOT = Path(__file__).resolve().parents[2]
 REFERENCE = ROOT / 'tests' / 'data' / 'grid_start_up_reference.json'
 KEYS = ('radii', 'pressure', 'temperature', 'mass_enclosed')
 REFRESH = 'python -m tools.validation.grid_start_up_reference'
+PYTHON = f'{sys.version_info.major}.{sys.version_info.minor}'
 GENERATED = {'_version.py'}  # written at install time with the commit in it
 
 GRID_CMF95 = {
@@ -93,12 +99,93 @@ def md5(path):
         return hashlib.file_digest(f, 'md5').hexdigest()
 
 
-def source_hash(files, root):
-    """sha256 over the names (sorted) and bytes of ``files``, paths relative to ``root``."""
+def _code(text, name='<unknown>'):
+    """``ast.dump`` of the module ``text`` (bytes, in the encoding the module declares)
+    without its bare string statements, which include the docstrings; comments are not in
+    the tree."""
+
+    def text_only(s):
+        value = s.value if isinstance(s, ast.Expr) else None
+        return isinstance(value, ast.Constant) and isinstance(value.value, str)
+
+    tree = ast.parse(text, name)
+    for node in ast.walk(tree):
+        for field in ('body', 'orelse', 'finalbody'):
+            if isinstance(getattr(node, field, None), list):
+                setattr(node, field, [s for s in getattr(node, field) if not text_only(s)])
+    return ast.dump(tree).encode()
+
+
+def _hash(texts):
+    """sha256 over the names (sorted) and code trees of ``texts``, a dict name -> bytes."""
     h = hashlib.sha256()
-    for name in sorted(files):
-        h.update(name.encode() + b'\0' + (Path(root) / name).read_bytes())
+    for name in sorted(texts):
+        h.update(name.encode() + b'\0' + _code(texts[name], name))
     return h.hexdigest()
+
+
+def source_hash(files, root):
+    """Hash of the code of ``files``, paths relative to ``root``, under the running Python."""
+    return _hash({name: (Path(root) / name).read_bytes() for name in files})
+
+
+def source_mismatch(stored, pkg):
+    """None when the stored ``source`` block holds the hash of the modules in ``pkg`` under
+    this Python minor, else the reason with the command that writes the reference again."""
+    if stored.get('python') != PYTHON:
+        return (
+            f'the source hash was taken under Python {stored.get("python")} and this is '
+            f'Python {PYTHON}: run {REFRESH} --source-only'
+        )
+    if source_hash(stored['files'], pkg) != stored['sha256']:
+        return f'the code of the Zalmoxis source differs from the stored one: run {REFRESH}'
+    return None
+
+
+def restamp_source(path=REFERENCE, root=ROOT, pkg=None):
+    """Write the source hash of ``path`` again under this Python and keep every other value,
+    when the structures come from a clean ``src`` tree and the stored modules at the stored
+    commit and in ``pkg`` have the same code; raises ValueError otherwise."""
+    if pkg is None:
+        import zalmoxis
+
+        pkg = Path(zalmoxis.__file__).parent
+    ref = json.loads(Path(path).read_text())
+    commit, files = ref['commit'], ref['source']['files']
+    if not (isinstance(commit, str) and re.fullmatch('[0-9a-f]{40,64}', commit)):
+        raise ValueError(f'the stored commit {commit!r} is not a commit sha: run {REFRESH}')
+    if ref.get('source_tree_clean') is not True:
+        raise ValueError(f'the structures were solved in a tree with changes: run {REFRESH}')
+    here, top = Path(pkg).resolve(), Path(root).resolve()
+    if not here.is_relative_to(top):
+        raise ValueError(f'the imported zalmoxis {pkg} is not in {root}: install this tree')
+    rel = here.relative_to(top).as_posix()
+    git = ('git', '-C', str(root))
+    if subprocess.run(
+        (*git, 'cat-file', '-e', f'{commit}^{{commit}}'), capture_output=True
+    ).returncode:
+        subprocess.run((*git, 'fetch', '-q', 'origin', commit), capture_output=True)
+    then = {}
+    for f in files:
+        try:
+            then[f] = subprocess.check_output(
+                (*git, 'show', f'{commit}:{rel}/{f}'), stderr=subprocess.DEVNULL
+            )
+        except subprocess.CalledProcessError:
+            raise ValueError(
+                f'{rel}/{f} at commit {commit} is not in {root} nor its origin: run {REFRESH}'
+            ) from None
+    try:
+        now, old = source_hash(files, pkg), _hash(then)
+    except (OSError, SyntaxError) as err:
+        raise ValueError(f'{err}: run {REFRESH}') from None
+    if old != now:
+        raise ValueError(
+            f'the code of the Zalmoxis source changed since {commit}: run {REFRESH}'
+        )
+    ref['source'] = {**ref['source'], 'sha256': now, 'python': PYTHON}
+    dump_compact(ref, path)
+    return ref
 
 
 def loaded_sources():
@@ -179,7 +266,7 @@ def write(path=REFERENCE):
             n: {'file': Path(md[n]['eos_file']).name, 'md5': md5(md[n]['eos_file'])}
             for n in names
         },
-        'source': {'files': files, 'sha256': source_hash(files, pkg)},
+        'source': {'files': files, 'sha256': source_hash(files, pkg), 'python': PYTHON},
         **blocks,
     }
     dump_compact(ref, path)
@@ -187,10 +274,16 @@ def write(path=REFERENCE):
 
 
 def main(argv=None):
-    """Command line entry: write the reference."""
+    """Command line entry: write the reference, or with ``--source-only`` its source hash."""
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument('--out', default=str(REFERENCE), help='reference file to write')
-    ref = write(parser.parse_args(argv).out)
+    parser.add_argument(
+        '--out',
+        default=str(REFERENCE),
+        help='reference file to write, or to restamp with --source-only',
+    )
+    parser.add_argument('--source-only', action='store_true', help='write only the source hash')
+    args = parser.parse_args(argv)
+    ref = restamp_source(args.out) if args.source_only else write(args.out)
     print(ref['commit'], ref['source']['sha256'])
 
 
